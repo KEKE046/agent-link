@@ -611,7 +611,9 @@ function app() {
     async fetchInstallInfo() {
       try {
         const version = this.vscodeInstallVersion || '1.112.0';
-        const res = await fetch(`/api/vscode/install-command?version=${encodeURIComponent(version)}`);
+        const params = new URLSearchParams({ version });
+        if (this.vscodeTargetNodeId) params.set('nodeId', this.vscodeTargetNodeId);
+        const res = await fetch(`/api/vscode/install-command?${params}`);
         this.vscodeInstall = await res.json();
       } catch {
         this.vscodeInstall = null;

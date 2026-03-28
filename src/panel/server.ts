@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import {
   listNodes,
@@ -29,6 +29,21 @@ import stylesCss from "../public/styles.css" with { type: "text" };
 const app = new Hono();
 const isDev = Bun.env.NODE_ENV === "development";
 
+// Admin secret for token management endpoints. Set PANEL_ADMIN_SECRET env var.
+const adminSecret = Bun.env.PANEL_ADMIN_SECRET;
+
+function checkAdminAuth(c: Context): Response | null {
+  if (!adminSecret) {
+    // If no secret is configured, treat as a server misconfiguration
+    return c.json({ error: "PANEL_ADMIN_SECRET is not configured" }, 503);
+  }
+  const auth = c.req.header("authorization") || "";
+  if (auth !== `Bearer ${adminSecret}`) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+  return null;
+}
+
 async function readAsset(path: string, embedded: string): Promise<string> {
   if (!isDev) return embedded;
   const file = Bun.file(import.meta.dir + "/.." + path);
@@ -43,14 +58,20 @@ app.get("/api/nodes", (c) => {
 });
 
 app.post("/api/nodes/token", (c) => {
+  const deny = checkAdminAuth(c);
+  if (deny) return deny;
   return c.json({ token: generateToken() });
 });
 
 app.get("/api/nodes/tokens", (c) => {
+  const deny = checkAdminAuth(c);
+  if (deny) return deny;
   return c.json(listTokens());
 });
 
 app.delete("/api/nodes/token/:token", (c) => {
+  const deny = checkAdminAuth(c);
+  if (deny) return deny;
   return c.json({ ok: revokeToken(c.req.param("token")) });
 });
 

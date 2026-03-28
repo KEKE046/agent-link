@@ -1,6 +1,6 @@
 {
   "name": "agent-link",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "type": "module",
   "scripts": {
     "dev": "NODE_ENV=development bunx @tailwindcss/cli -i src/public/tailwind.input.css -o src/public/styles.css --watch & NODE_ENV=development bun --watch src/server.ts",
