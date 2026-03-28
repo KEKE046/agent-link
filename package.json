@@ -3,15 +3,18 @@
   "version": "0.4.0",
   "type": "module",
   "scripts": {
-    "dev": "NODE_ENV=development bun --watch src/server.ts",
-    "build": "bun build src/server.ts --outdir dist --target bun",
-    "build:binary": "bun build src/server.ts --compile --outfile dist/agent-link"
+    "dev": "NODE_ENV=development bunx @tailwindcss/cli -i src/public/tailwind.input.css -o src/public/styles.css --watch & NODE_ENV=development bun --watch src/server.ts",
+    "build:css": "bunx @tailwindcss/cli -i src/public/tailwind.input.css -o src/public/styles.css --minify",
+    "build": "bun run build:css && bun build src/server.ts --outdir dist --target bun",
+    "build:binary": "bun run build:css && bun build src/server.ts --compile --outfile dist/agent-link"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "latest",
     "hono": "^4.12.9"
   },
   "devDependencies": {
-    "@types/bun": "^1.3.11"
+    "@tailwindcss/cli": "^4.2.2",
+    "@types/bun": "^1.3.11",
+    "tailwindcss": "^4.2.2"
   }
 }

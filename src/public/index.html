@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Agent Link</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/styles.css">
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="/renderer.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
@@ -50,7 +50,9 @@
 <div x-data="app()" x-cloak class="flex h-screen">
 
   <!-- Sidebar -->
-  <div class="w-64 bg-gray-900 border-r border-gray-800 flex flex-col flex-shrink-0">
+  <div class="bg-gray-900 flex flex-col flex-shrink-0 overflow-hidden transition-[width] duration-200"
+       :style="`width: ${sidebarCollapsed ? 0 : sidebarWidth}px`"
+       :class="sidebarCollapsed ? '' : 'border-r border-gray-800'">
     <div class="p-3 border-b border-gray-800 flex gap-2">
       <button @click="newSession()" class="flex-1 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm">+ New</button>
       <button @click="loadSessions()" class="flex-1 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-sm">Load</button>
@@ -86,12 +88,23 @@
       <div x-show="managed.length === 0" class="p-4 text-gray-600 text-sm text-center">No sessions</div>
     </div>
   </div>
+  <div x-show="!sidebarCollapsed" @mousedown.prevent="startResize($event)" @touchstart.prevent="startResize($event)"
+       @keydown="handleResizeKeydown($event)"
+       tabindex="0"
+       role="separator" aria-orientation="vertical" aria-label="Resize sidebar"
+       class="w-1 bg-gray-800 hover:bg-gray-700 active:bg-gray-700 cursor-col-resize flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"></div>
 
   <!-- Main -->
   <div class="flex-1 flex flex-col min-w-0">
 
     <!-- Header bar -->
     <div class="px-4 py-2 border-b border-gray-800 flex items-center gap-3 text-sm bg-gray-900/50 flex-shrink-0">
+      <button @click="toggleSidebar()"
+              class="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-xs flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+              :aria-label="sidebarToggleLabel()"
+              :aria-expanded="String(!sidebarCollapsed)"
+              :title="sidebarToggleLabel()"
+              x-text="sidebarCollapsed ? '☰' : '◧'"></button>
       <span class="text-gray-500">cwd:</span>
       <input x-model="cwd" class="bg-transparent text-gray-300 flex-1 outline-none text-sm mono min-w-0" />
       <select x-model="model" class="bg-gray-800 text-gray-300 rounded px-2 py-1 text-xs outline-none">
@@ -226,6 +239,14 @@ function app() {
     totalIn: 0,
     totalOut: 0,
     expandedGroups: new Set(),
+    sidebarWidth: (() => {
+      const storedWidth = Number(localStorage.getItem('agent-link:sidebar-width'));
+      return Math.min(480, Math.max(180, Number.isFinite(storedWidth) ? storedWidth : 256));
+    })(),
+    sidebarCollapsed: (() => {
+      const storedCollapsed = localStorage.getItem('agent-link:sidebar-collapsed');
+      return storedCollapsed !== null ? storedCollapsed === 'true' : !window.matchMedia('(min-width: 768px)').matches;
+    })(),
 
     showLoadModal: false,
     browseSessions: [],
@@ -243,6 +264,66 @@ function app() {
       setInterval(() => this.refreshActive(), 5000);
       this.$watch('cwd', (v) => localStorage.setItem('agent-link:cwd', v));
       this.$watch('model', (v) => localStorage.setItem('agent-link:model', v));
+      this.$watch('sidebarCollapsed', (v) => localStorage.setItem('agent-link:sidebar-collapsed', String(v)));
+      this.$watch('sidebarWidth', (v) => localStorage.setItem('agent-link:sidebar-width', String(this.clampWidth(v))));
+    },
+
+    clampWidth(width) {
+      return Math.min(480, Math.max(180, Number.isFinite(width) ? width : 256));
+    },
+
+    toggleSidebar() {
+      this.sidebarCollapsed = !this.sidebarCollapsed;
+    },
+
+    sidebarToggleLabel() {
+      return this.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar';
+    },
+
+    resizeSidebarBy(delta) {
+      if (this.sidebarCollapsed) return;
+      this.sidebarWidth = this.clampWidth(this.sidebarWidth + delta);
+    },
+
+    handleResizeKeydown(event) {
+      if (event.key === 'ArrowLeft') { event.preventDefault(); this.resizeSidebarBy(-12); }
+      else if (event.key === 'ArrowRight') { event.preventDefault(); this.resizeSidebarBy(12); }
+      else if (event.key === 'Home') { event.preventDefault(); this.resizeSidebarBy(180 - this.sidebarWidth); }
+      else if (event.key === 'End') { event.preventDefault(); this.resizeSidebarBy(480 - this.sidebarWidth); }
+    },
+
+    startResize(event) {
+      if (this.sidebarCollapsed) return;
+      const startX = event.touches?.[0]?.clientX ?? event.clientX;
+      const startWidth = this.sidebarWidth;
+      let frame = null;
+      let nextWidth = this.sidebarWidth;
+      const previousUserSelect = document.body.style.userSelect;
+      document.body.style.userSelect = 'none';
+      const onMove = (e) => {
+        if (e.type === 'touchmove' && e.cancelable) e.preventDefault();
+        const clientX = e.touches?.[0]?.clientX ?? e.clientX;
+        if (typeof clientX !== 'number') return;
+        nextWidth = this.clampWidth(startWidth + (clientX - startX));
+        if (frame) return;
+        frame = requestAnimationFrame(() => {
+          this.sidebarWidth = nextWidth;
+          frame = null;
+        });
+      };
+      const onUp = () => {
+        if (frame) cancelAnimationFrame(frame);
+        this.sidebarWidth = nextWidth;
+        document.body.style.userSelect = previousUserSelect;
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        window.removeEventListener('touchmove', onMove);
+        window.removeEventListener('touchend', onUp);
+      };
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+      window.addEventListener('touchmove', onMove, { passive: false });
+      window.addEventListener('touchend', onUp);
     },
 
     // Dispatch event to messages component
