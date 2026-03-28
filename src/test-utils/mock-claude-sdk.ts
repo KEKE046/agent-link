@@ -1,26 +1,48 @@
 import type { ClaudeSdk, Query } from "../claude-sdk";
 
-type QueryMessage = any;
+type QueryMessage = {
+  type: string;
+  [key: string]: unknown;
+};
 
 type QueryControls = {
   interruptCalls: number;
   setModelCalls: string[];
 };
 
-type QueryFactory = (args: any) => {
+type QueryArgs = Parameters<ClaudeSdk["query"]>[0];
+type ListSessionsArgs = Parameters<ClaudeSdk["listSessions"]>;
+type GetSessionInfoArgs = Parameters<ClaudeSdk["getSessionInfo"]>;
+type GetSessionMessagesArgs = Parameters<ClaudeSdk["getSessionMessages"]>;
+type ListSessionsResult = Awaited<ReturnType<ClaudeSdk["listSessions"]>>;
+type GetSessionInfoResult = Awaited<ReturnType<ClaudeSdk["getSessionInfo"]>>;
+type GetSessionMessagesResult = Awaited<
+  ReturnType<ClaudeSdk["getSessionMessages"]>
+>;
+
+type QueryFactory = (args: QueryArgs) => {
   messages: QueryMessage[];
   throwError?: Error;
 };
 
 type SessionFactory = () => {
-  listSessions?: any;
-  sessionInfo?: any;
-  sessionMessages?: any;
+  listSessions?: ListSessionsResult;
+  sessionInfo?: GetSessionInfoResult;
+  sessionMessages?: GetSessionMessagesResult;
 };
+
+function createDeferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
 
 function createQueryFromMessages(
   messages: QueryMessage[],
   controls: QueryControls,
+  completion: () => void,
   throwError?: Error
 ): Query {
   return {
@@ -31,10 +53,14 @@ function createQueryFromMessages(
       controls.setModelCalls.push(model);
     },
     async *[Symbol.asyncIterator]() {
-      for (const message of messages) {
-        yield message;
+      try {
+        for (const message of messages) {
+          yield message;
+        }
+        if (throwError) throw throwError;
+      } finally {
+        completion();
       }
-      if (throwError) throw throwError;
     },
   } as Query;
 }
@@ -43,15 +69,20 @@ export function createMockClaudeSdk(opts?: {
   queryFactory?: QueryFactory;
   sessionFactory?: SessionFactory;
 }) {
-  const queryCalls: any[] = [];
+  const queryCalls: QueryArgs[] = [];
   const queryControls: QueryControls[] = [];
-  const defaults = opts?.sessionFactory?.() || {};
+  const queryCompletions: Promise<void>[] = [];
+  const listSessionsCalls: ListSessionsArgs[] = [];
+  const getSessionInfoCalls: GetSessionInfoArgs[] = [];
+  const getSessionMessagesCalls: GetSessionMessagesArgs[] = [];
 
   const sdk: ClaudeSdk = {
-    query(args: any) {
+    query(args: QueryArgs) {
       queryCalls.push(args);
       const controls: QueryControls = { interruptCalls: 0, setModelCalls: [] };
       queryControls.push(controls);
+      const done = createDeferred();
+      queryCompletions.push(done.promise);
       const result = opts?.queryFactory?.(args) || {
         messages: [
           {
@@ -72,26 +103,44 @@ export function createMockClaudeSdk(opts?: {
         ],
       };
 
-      return createQueryFromMessages(result.messages, controls, result.throwError);
+      return createQueryFromMessages(
+        result.messages,
+        controls,
+        done.resolve,
+        result.throwError
+      );
     },
-    async listSessions() {
+    async listSessions(...args: ListSessionsArgs) {
+      listSessionsCalls.push(args);
+      const defaults = opts?.sessionFactory?.() || {};
       return defaults.listSessions || [];
     },
-    async getSessionInfo(sessionId: string) {
+    async getSessionInfo(...args: GetSessionInfoArgs) {
+      getSessionInfoCalls.push(args);
+      const defaults = opts?.sessionFactory?.() || {};
       if (defaults.sessionInfo) return defaults.sessionInfo;
-      return { session_id: sessionId };
+      return { session_id: args[0] } as GetSessionInfoResult;
     },
-    async getSessionMessages(sessionId: string) {
+    async getSessionMessages(...args: GetSessionMessagesArgs) {
+      getSessionMessagesCalls.push(args);
+      const defaults = opts?.sessionFactory?.() || {};
       if (defaults.sessionMessages) return defaults.sessionMessages;
-      return [{ session_id: sessionId }];
+      return [{ session_id: args[0] }] as GetSessionMessagesResult;
     },
   };
 
   return {
     sdk,
+    async waitForCompletion(index = queryCompletions.length - 1) {
+      if (index < 0 || !queryCompletions[index]) return;
+      await queryCompletions[index];
+    },
     state: {
       queryCalls,
       queryControls,
+      listSessionsCalls,
+      getSessionInfoCalls,
+      getSessionMessagesCalls,
     },
   };
 }
