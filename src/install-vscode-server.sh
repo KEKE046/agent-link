@@ -27,7 +27,6 @@ need_cmd() {
 
 need_cmd curl
 need_cmd tar
-need_cmd jq
 need_cmd uname
 need_cmd mktemp
 need_cmd chmod
@@ -61,13 +60,34 @@ detect_arch() {
   esac
 }
 
+extract_commit() {
+  if command -v jq >/dev/null 2>&1; then
+    jq -r '.version'
+    return
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c "import json,sys
+try:
+  value = json.load(sys.stdin).get('version')
+except Exception as e:
+  print(f'Failed to parse metadata JSON: {e}', file=sys.stderr)
+  sys.exit(1)
+if not value:
+  print('Missing version field in metadata JSON', file=sys.stderr)
+  sys.exit(1)
+print(value)"
+    return
+  fi
+  sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1
+}
+
 ARCH="$(detect_arch)"
 ROOT="${HOME}/.vscode-server"
 
 METADATA_URL="https://update.code.visualstudio.com/api/versions/${VERSION}/linux-${ARCH}/stable"
 
 echo "==> Resolving commit for VS Code ${VERSION} (${ARCH})"
-COMMIT="$(curl -fsSL "${METADATA_URL}" | jq -r '.version')"
+COMMIT="$(curl -fsSL "${METADATA_URL}" | extract_commit)"
 
 if [[ -z "${COMMIT}" || "${COMMIT}" == "null" ]]; then
   echo "Failed to resolve commit from: ${METADATA_URL}" >&2

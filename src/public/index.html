@@ -447,6 +447,7 @@ function app() {
       try {
         const response = await fetch('/api/vscode/versions');
         this.vscodeVersions = await response.json();
+        this.vscodeTab = this.vscodeVersions.length === 0 ? 'install' : 'start';
         await this.fetchInstallInfo();
         if (this.vscodeVersions.length > 0) {
           this.vscodeSelectedCommit = this.vscodeVersions[0].commit;

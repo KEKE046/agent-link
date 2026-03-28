@@ -119,10 +119,7 @@ export async function stopVscodeServer(cwd: string): Promise<boolean> {
 }
 
 function parsePort(line: string): number | null {
-  const m =
-    line.match(/127\.0\.0\.1:(\d+)/) ||
-    line.match(/listening.*?(\d+)/i) ||
-    line.match(/port\s+(\d+)/i);
+  const m = line.match(/127\.0\.0\.1:(\d+)/);
   if (!m) return null;
   const port = Number(m[1]);
   if (!Number.isInteger(port) || port <= 0 || port > 65535) return null;
@@ -137,6 +134,9 @@ export async function startVscodeServer(
   if (!commit) throw new Error("commit is required");
   if (!/^[a-f0-9]{7,40}$/i.test(commit)) {
     throw new Error("commit must be a 7-40 char hex hash");
+  }
+  if (!existsSync(cwd)) {
+    throw new Error(`Directory not found: ${cwd}`);
   }
   if (!shutdownHookRegistered) {
     shutdownHookRegistered = true;

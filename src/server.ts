@@ -24,18 +24,16 @@ async function readAsset(path: string, embedded: string): Promise<string> {
 }
 
 function getProxyAuthority(req: Request): string {
-  return (
-    req.headers.get("x-forwarded-host") ||
-    req.headers.get("host") ||
-    "127.0.0.1:3456"
-  );
+  return req.headers.get("host") || req.headers.get("x-forwarded-host") || "localhost";
 }
 
 function rewriteRemoteAuthority(html: string, authority: string): string {
+  // Only rewrite the first matching configuration token in the HTML payload.
+  // This avoids touching repeated string literals that may appear in bundled JS.
   return html
-    .replace(/("remoteAuthority"\s*:\s*")[^"]+(")/g, `$1${authority}$2`)
+    .replace(/("remoteAuthority"\s*:\s*")[^"]+(")/, `$1${authority}$2`)
     .replace(
-      /(&quot;remoteAuthority&quot;\s*:\s*&quot;)[^&]+(&quot;)/g,
+      /(&quot;remoteAuthority&quot;\s*:\s*&quot;)[^&]+(&quot;)/,
       `$1${authority}$2`
     );
 }
