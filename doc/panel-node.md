@@ -26,11 +26,12 @@ PANEL_PORT=3457 bun run dev:panel
 # 2. Start Node(s)
 PANEL_URL=http://localhost:3457 NODE_LABEL=my-node bun run dev:node
 # Node first boot creates ~/.agent-link/node-key and stays pending until approved
+# Or specify key via env: NODE_KEY=mykey PANEL_URL=... bun run dev:node
 ```
 
 ## Connection Flow
 
-1. Node starts with `PANEL_URL`; first start creates `~/.agent-link/node-key` (8 chars)
+1. Node starts with `PANEL_URL`; key comes from `NODE_KEY` env, or `~/.agent-link/node-key` file (auto-created on first boot, 8 chars)
 2. Node connects WebSocket to `Panel/ws/node` and sends `register { key, label }`
 3. Panel stores/reuses key record in `~/.agent-link/nodes.json`
 4. If node not approved, Panel replies `pending` and keeps WS connected

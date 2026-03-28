@@ -4,6 +4,10 @@ import { join } from "node:path";
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 export function loadOrCreateNodeKey() {
+  // Environment variable takes highest priority
+  const envKey = Bun.env.NODE_KEY;
+  if (envKey) return envKey;
+
   const dir = Bun.env.AGENT_LINK_HOME || join(homedir(), ".agent-link");
   const path = join(dir, "node-key");
   mkdirSync(dir, { recursive: true });
