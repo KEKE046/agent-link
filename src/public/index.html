@@ -89,7 +89,10 @@
     </div>
   </div>
   <div x-show="!sidebarCollapsed" @mousedown.prevent="startResize($event)"
-       class="hidden md:block w-1 bg-gray-800 hover:bg-gray-700 cursor-col-resize flex-shrink-0"></div>
+       @keydown="handleResizeKeydown($event)"
+       tabindex="0"
+       role="separator" aria-orientation="vertical" aria-label="Resize sidebar"
+       class="hidden md:block w-1 bg-gray-800 hover:bg-gray-700 cursor-col-resize flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"></div>
 
   <!-- Main -->
   <div class="flex-1 flex flex-col min-w-0">
@@ -97,8 +100,10 @@
     <!-- Header bar -->
     <div class="px-4 py-2 border-b border-gray-800 flex items-center gap-3 text-sm bg-gray-900/50 flex-shrink-0">
       <button @click="toggleSidebar()"
-              class="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-xs flex-shrink-0"
-              :title="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+              class="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-xs flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+              :aria-label="sidebarToggleLabel()"
+              :aria-expanded="String(!sidebarCollapsed)"
+              :title="sidebarToggleLabel()"
               x-text="sidebarCollapsed ? '☰' : '◧'"></button>
       <span class="text-gray-500">cwd:</span>
       <input x-model="cwd" class="bg-transparent text-gray-300 flex-1 outline-none text-sm mono min-w-0" />
@@ -221,6 +226,20 @@
 
 <script>
 function app() {
+  const SIDEBAR_WIDTH_KEY = 'agent-link:sidebar-width';
+  const SIDEBAR_COLLAPSED_KEY = 'agent-link:sidebar-collapsed';
+  const DEFAULT_SIDEBAR_WIDTH = 256;
+  const MIN_SIDEBAR_WIDTH = 180;
+  const MAX_SIDEBAR_WIDTH = 480;
+  const MOBILE_BREAKPOINT = 768; // Tailwind `md`
+  const clampSidebarWidthValue = (width) => Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, width));
+  const normalizeSidebarWidthValue = (width) => clampSidebarWidthValue(Number.isFinite(width) ? width : DEFAULT_SIDEBAR_WIDTH);
+  const rawSidebarWidth = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+  const storedSidebarWidth = normalizeSidebarWidthValue(rawSidebarWidth > 0 ? rawSidebarWidth : DEFAULT_SIDEBAR_WIDTH);
+  const hasStoredSidebarCollapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) !== null;
+  const initialSidebarCollapsed = hasStoredSidebarCollapsed
+    ? localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true'
+    : !window.matchMedia(`(min-width: ${MOBILE_BREAKPOINT}px)`).matches;
   return {
     managed: JSON.parse(localStorage.getItem('agent-link:managed') || '[]'),
     currentId: null,
@@ -234,8 +253,8 @@ function app() {
     totalIn: 0,
     totalOut: 0,
     expandedGroups: new Set(),
-    sidebarWidth: Number(localStorage.getItem('agent-link:sidebar-width') || 256),
-    sidebarCollapsed: localStorage.getItem('agent-link:sidebar-collapsed') === 'true',
+    sidebarWidth: storedSidebarWidth,
+    sidebarCollapsed: initialSidebarCollapsed,
 
     showLoadModal: false,
     browseSessions: [],
@@ -248,37 +267,57 @@ function app() {
 
     init() {
       Alpine.store('active', false);
-      this.sidebarWidth = this.clampSidebarWidth(this.sidebarWidth);
-      if (window.innerWidth < 768 && localStorage.getItem('agent-link:sidebar-collapsed') === null) {
-        this.sidebarCollapsed = true;
-      }
       if (!this.cwd) this.cwd = window.location.hostname === 'localhost' ? '.' : '/';
       this.refreshActive();
       setInterval(() => this.refreshActive(), 5000);
       this.$watch('cwd', (v) => localStorage.setItem('agent-link:cwd', v));
       this.$watch('model', (v) => localStorage.setItem('agent-link:model', v));
-      this.$watch('sidebarCollapsed', (v) => localStorage.setItem('agent-link:sidebar-collapsed', String(v)));
+      this.$watch('sidebarCollapsed', (v) => localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(v)));
     },
 
-    clampSidebarWidth(width) {
-      return Math.min(480, Math.max(180, width || 256));
+    normalizeSidebarWidth(width) {
+      return normalizeSidebarWidthValue(width);
     },
 
     toggleSidebar() {
       this.sidebarCollapsed = !this.sidebarCollapsed;
     },
 
+    sidebarToggleLabel() {
+      return this.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar';
+    },
+
+    resizeSidebarBy(delta) {
+      if (this.sidebarCollapsed) return;
+      this.sidebarWidth = this.normalizeSidebarWidth(this.sidebarWidth + delta);
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(this.sidebarWidth));
+    },
+
+    handleResizeKeydown(event) {
+      if (event.key === 'ArrowLeft') { event.preventDefault(); this.resizeSidebarBy(-12); }
+      else if (event.key === 'ArrowRight') { event.preventDefault(); this.resizeSidebarBy(12); }
+      else if (event.key === 'Home') { event.preventDefault(); this.resizeSidebarBy(MIN_SIDEBAR_WIDTH - this.sidebarWidth); }
+      else if (event.key === 'End') { event.preventDefault(); this.resizeSidebarBy(MAX_SIDEBAR_WIDTH - this.sidebarWidth); }
+    },
+
     startResize(event) {
       if (this.sidebarCollapsed) return;
       const startX = event.clientX;
       const startWidth = this.sidebarWidth;
-      document.body.classList.add('select-none');
+      let frame = null;
+      let nextWidth = this.sidebarWidth;
       const onMove = (e) => {
-        this.sidebarWidth = this.clampSidebarWidth(startWidth + (e.clientX - startX));
+        nextWidth = this.normalizeSidebarWidth(startWidth + (e.clientX - startX));
+        if (frame) return;
+        frame = requestAnimationFrame(() => {
+          this.sidebarWidth = nextWidth;
+          frame = null;
+        });
       };
       const onUp = () => {
-        document.body.classList.remove('select-none');
-        localStorage.setItem('agent-link:sidebar-width', String(this.sidebarWidth));
+        if (frame) cancelAnimationFrame(frame);
+        this.sidebarWidth = nextWidth;
+        localStorage.setItem(SIDEBAR_WIDTH_KEY, String(this.sidebarWidth));
         window.removeEventListener('mousemove', onMove);
         window.removeEventListener('mouseup', onUp);
       };
