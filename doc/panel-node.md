@@ -23,21 +23,19 @@ bun run dev          # same as before, port 3456
 # 1. Start Panel
 PANEL_PORT=3457 bun run dev:panel
 
-# 2. Generate a token
-curl -X POST http://localhost:3457/api/nodes/token
-# => {"token":"tok_..."}
-
-# 3. Start Node(s)
-PANEL_URL=http://localhost:3457 NODE_TOKEN=tok_... NODE_LABEL=my-node bun run dev:node
+# 2. Start Node(s)
+PANEL_URL=http://localhost:3457 NODE_LABEL=my-node bun run dev:node
+# Node first boot creates ~/.agent-link/node-key and stays pending until approved
 ```
 
 ## Connection Flow
 
-1. Panel admin generates token via `POST /api/nodes/token`
-2. Node starts with `PANEL_URL` + `NODE_TOKEN` env vars
+1. Node starts with `PANEL_URL`; first start creates `~/.agent-link/node-key` (8 chars)
 3. Node connects WebSocket to `Panel/ws/node`
-4. Node sends `register { token, label, nodeId? }`
-5. Panel validates token, assigns/restores nodeId, replies `registered { nodeId }`
+4. Node sends `register { key, label }`
+5. Panel stores/reuses key record in `~/.agent-link/nodes.json`
+6. If node not approved, Panel replies `pending` and keeps WS connected
+7. Admin approves via `POST /api/nodes/:nodeId/approve`, Panel replies `registered { nodeId }`
 6. Node sends periodic `heartbeat { activeSessionIds, vscodeServers }` every 10s
 7. Panel pings every 30s to keep connection alive
 8. On disconnect, Node auto-reconnects with exponential backoff (1s -> 2s -> 4s -> ... -> 60s)
@@ -48,7 +46,7 @@ PANEL_URL=http://localhost:3457 NODE_TOKEN=tok_... NODE_LABEL=my-node bun run de
 
 | Message | Fields | Purpose |
 |---------|--------|---------|
-| `register` | token, label, nodeId? | Initial auth |
+| `register` | key, label | Initial auth |
 | `heartbeat` | activeSessionIds, vscodeServers | Status update |
 | `event` | sessionId, event | Forward SDK events to Panel SSE |
 | `response` | requestId, data | Reply to Panel request |
@@ -63,6 +61,7 @@ PANEL_URL=http://localhost:3457 NODE_TOKEN=tok_... NODE_LABEL=my-node bun run de
 | Message | Fields | Purpose |
 |---------|--------|---------|
 | `registered` | nodeId | Auth success |
+| `pending` | | Waiting for admin approval |
 | `request` | requestId, action, params | Forward API call |
 | `ping` | | Keep-alive |
 | `tunnel:request` | tunnelId, method, path, headers, body? | HTTP tunnel request |
@@ -112,6 +111,7 @@ All VSCode traffic goes through the Node's management WebSocket (no direct netwo
 
 - Auto-detects Panel mode by probing `GET /api/nodes`
 - Panel mode: sidebar groups by Node -> CWD -> Session (3 levels)
+- Pending nodes are visible in sidebar and can be approved/renamed from UI
 - Standalone mode: sidebar groups by CWD -> Session (2 levels, unchanged)
 - Node online/offline shown with green/gray dot
 - Offline node sessions shown at 50% opacity
@@ -125,10 +125,10 @@ src/
   protocol.ts       -- Shared WS message types
   panel/
     server.ts       -- Hono routes (same API surface), WS upgrade for nodes + tunnels
-    nodes.ts        -- Node pool, token auth, request/response routing, event relay
+    nodes.ts        -- Node pool, key+approve auth, request/response routing, event relay
     tunnel.ts       -- HTTP/WS tunnel manager, remoteAuthority rewrite
   node/
-    main.ts         -- Entry point (PANEL_URL + NODE_TOKEN)
+    main.ts         -- Entry point (PANEL_URL + local ~/.agent-link/node-key)
     connector.ts    -- WS connection, auto-reconnect, request dispatch, event forwarding
     tunnel.ts       -- Local fetch/WS for tunnel:request and tunnel:ws-*
   server.ts         -- Standalone server (unchanged)

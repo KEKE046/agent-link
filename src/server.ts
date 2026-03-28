@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import * as sessions from "./sessions";
+import { addManaged, listManaged, removeManaged } from "./managed";
 import {
   getActiveServerById,
   getInstallCommand,
@@ -161,6 +162,30 @@ app.get("/api/sessions/:id/messages", async (c) => {
 // API: Currently active session IDs
 app.get("/api/active", (c) => {
   return c.json(sessions.getActiveIds());
+});
+
+app.get("/api/managed", (c) => {
+  return c.json(listManaged());
+});
+
+app.post("/api/managed", async (c) => {
+  const body = await c.req.json();
+  const id = typeof body?.id === "string" ? body.id : "";
+  const cwd = typeof body?.cwd === "string" ? body.cwd : "";
+  if (!id || !cwd) return c.json({ error: "id and cwd required" }, 400);
+  return c.json(
+    addManaged({
+      id,
+      nodeId: typeof body?.nodeId === "string" ? body.nodeId : undefined,
+      cwd,
+      createdAt:
+        typeof body?.createdAt === "number" ? body.createdAt : Date.now(),
+    })
+  );
+});
+
+app.delete("/api/managed/:id", (c) => {
+  return c.json(removeManaged(c.req.param("id")));
 });
 
 app.get("/api/vscode/versions", async (c) => {

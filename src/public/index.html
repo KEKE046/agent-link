@@ -67,7 +67,10 @@
                    class="px-3 py-2 flex items-center gap-1.5 cursor-pointer hover:bg-gray-800/50 text-xs text-gray-300 sticky top-0 bg-gray-900 border-b border-gray-800/50 z-10">
                 <span x-text="expandedGroups.has('node:' + n.nodeId) ? '▾' : '▸'" class="text-gray-600 w-3"></span>
                 <span class="w-2 h-2 rounded-full flex-shrink-0" :class="isNodeOnline(n.nodeId) ? 'bg-green-400' : 'bg-gray-600'"></span>
-                <span class="truncate flex-1 font-semibold" x-text="n.label || n.nodeId"></span>
+                <button @click.stop="renameNodePrompt(n)" class="truncate flex-1 font-semibold text-left hover:text-blue-300" x-text="n.label || n.nodeId"></button>
+                <button x-show="!n.approved" @click.stop="approveNode(n.nodeId)" title="Approve node"
+                        class="px-1 py-0.5 rounded text-[10px] text-green-300 hover:bg-green-900/30">✓</button>
+                <span x-show="!n.approved" class="text-[10px] text-yellow-400">pending</span>
               </div>
               <template x-if="expandedGroups.has('node:' + n.nodeId)">
                 <div>
@@ -185,11 +188,15 @@
               :title="sidebarToggleLabel()"
               x-text="sidebarCollapsed ? '☰' : '◧'"></button>
       <template x-if="panelMode">
-        <select x-model="selectedNodeId" class="bg-gray-800 text-gray-300 rounded px-2 py-1 text-xs outline-none">
-          <template x-for="n in nodes" :key="n.nodeId">
-            <option :value="n.nodeId" :disabled="!n.online" x-text="(n.online ? '● ' : '○ ') + (n.label || n.nodeId)"></option>
-          </template>
-        </select>
+        <div class="flex items-center gap-2">
+          <select x-model="selectedNodeId" class="bg-gray-800 text-gray-300 rounded px-2 py-1 text-xs outline-none">
+            <template x-for="n in nodes" :key="n.nodeId">
+              <option :value="n.nodeId" :disabled="!n.online || !n.approved" x-text="(n.online ? '● ' : '○ ') + (n.label || n.nodeId) + (n.approved ? '' : ' (pending)')"></option>
+            </template>
+          </select>
+          <input x-model="panelAdminSecret" type="password" placeholder="admin secret"
+                 class="bg-gray-800 text-gray-300 rounded px-2 py-1 text-xs outline-none w-28" />
+        </div>
       </template>
       <span class="text-gray-500">cwd:</span>
       <input x-model="cwd" class="bg-transparent text-gray-300 flex-1 outline-none text-sm mono min-w-0" />
@@ -368,7 +375,7 @@
 <script>
 function app() {
   return {
-    managed: JSON.parse(localStorage.getItem('agent-link:managed') || '[]'),
+    managed: [],
     currentId: null,
     inputText: '',
     cwd: localStorage.getItem('agent-link:cwd') || '',
@@ -413,11 +420,12 @@ function app() {
     panelMode: false,
     nodes: [],
     selectedNodeId: localStorage.getItem('agent-link:nodeId') || '',
+    panelAdminSecret: '',
 
     init() {
       Alpine.store('active', false);
       if (!this.cwd) this.cwd = window.location.hostname === 'localhost' ? '.' : '/';
-      this.detectPanelMode();
+      this.detectPanelMode().then(() => this.loadManaged());
       this.refreshActive();
       this.refreshVscodeActive();
       setInterval(() => { this.refreshActive(); this.refreshVscodeActive(); if (this.panelMode) this.refreshNodes(); }, 5000);
@@ -443,11 +451,62 @@ function app() {
       }
     },
 
+    async loadManaged() {
+      try {
+        const res = await fetch('/api/managed');
+        if (res.ok) {
+          const list = await res.json();
+          this.managed = (list || []).map(item => ({
+            sessionId: item.id,
+            cwd: item.cwd,
+            model: item.model || '',
+            label: item.label || item.id?.slice(0, 12) || '',
+            nodeId: item.nodeId,
+            createdAt: item.createdAt,
+          }));
+          return;
+        }
+      } catch {}
+      this.managed = JSON.parse(localStorage.getItem('agent-link:managed') || '[]');
+      for (const s of this.managed) {
+        await this.saveManagedItem(s);
+      }
+      localStorage.removeItem('agent-link:managed');
+    },
+
     async refreshNodes() {
       try {
         const res = await fetch('/api/nodes');
         if (res.ok) this.nodes = await res.json();
       } catch {}
+    },
+
+    async approveNode(nodeId) {
+      if (!this.panelAdminSecret) return alert('Set admin secret in header first');
+      try {
+        await fetch(`/api/nodes/${encodeURIComponent(nodeId)}/approve`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${this.panelAdminSecret}` },
+        });
+      } catch {}
+      this.refreshNodes();
+    },
+
+    async renameNodePrompt(node) {
+      const next = prompt('Rename node', node.label || node.nodeId);
+      if (!next || next === (node.label || '')) return;
+      if (!this.panelAdminSecret) return alert('Set admin secret in header first');
+      try {
+        await fetch(`/api/nodes/${encodeURIComponent(node.nodeId)}/label`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.panelAdminSecret}`,
+          },
+          body: JSON.stringify({ label: next }),
+        });
+      } catch {}
+      this.refreshNodes();
     },
 
     isNodeOnline(nodeId) {
@@ -657,8 +716,20 @@ function app() {
       this.refreshVscodeActive();
     },
 
-    saveManaged() {
-      localStorage.setItem('agent-link:managed', JSON.stringify(this.managed));
+    async saveManagedItem(item) {
+      const body = {
+        id: item.sessionId,
+        cwd: item.cwd || '',
+        nodeId: item.nodeId,
+        createdAt: item.createdAt || Date.now(),
+      };
+      try {
+        await fetch('/api/managed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+      } catch {}
     },
 
     get groupedManaged() {
@@ -726,7 +797,7 @@ function app() {
           const entry = { sessionId: data.sessionId, cwd: this.cwd, model: this.model, label: prompt.slice(0, 40) };
           if (nodeId) entry.nodeId = nodeId;
           this.managed.unshift(entry);
-          this.saveManaged();
+          this.saveManagedItem(entry);
           if (this.panelMode && nodeId) {
             this.expandGroup('node:' + nodeId);
             this.expandGroup(nodeId + ':' + this.cwd);
@@ -777,7 +848,7 @@ function app() {
       if (!this.currentId) return;
       const s = this.managed.find(s => s.sessionId === this.currentId);
       if (s) s.model = this.model;
-      this.saveManaged();
+      this.saveManagedItem(s);
       try {
         const headers = { 'Content-Type': 'application/json' };
         if (this.panelMode && s?.nodeId) headers['x-node-id'] = s.nodeId;
@@ -912,7 +983,7 @@ function app() {
         };
         if (session.nodeId) entry.nodeId = session.nodeId;
         this.managed.unshift(entry);
-        this.saveManaged();
+        this.saveManagedItem(entry);
         if (this.panelMode && session.nodeId) {
           this.expandGroup('node:' + session.nodeId);
           this.expandGroup(session.nodeId + ':' + (session.cwd || this.cwd));
@@ -924,9 +995,9 @@ function app() {
       this.switchSession(session.sessionId);
     },
 
-    removeManaged(id) {
+    async removeManaged(id) {
       this.managed = this.managed.filter(s => s.sessionId !== id);
-      this.saveManaged();
+      try { await fetch(`/api/managed/${encodeURIComponent(id)}`, { method: 'DELETE' }); } catch {}
       if (this.currentId === id) {
         this.currentId = null;
         this.msg('clear');
