@@ -88,11 +88,11 @@
       <div x-show="managed.length === 0" class="p-4 text-gray-600 text-sm text-center">No sessions</div>
     </div>
   </div>
-  <div x-show="!sidebarCollapsed" @mousedown.prevent="startResize($event)"
+  <div x-show="!sidebarCollapsed" @mousedown.prevent="startResize($event)" @touchstart.prevent="startResize($event)"
        @keydown="handleResizeKeydown($event)"
        tabindex="0"
        role="separator" aria-orientation="vertical" aria-label="Resize sidebar"
-       class="hidden md:block w-1 bg-gray-800 hover:bg-gray-700 cursor-col-resize flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"></div>
+       class="w-1 bg-gray-800 hover:bg-gray-700 active:bg-gray-700 cursor-col-resize flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"></div>
 
   <!-- Main -->
   <div class="flex-1 flex flex-col min-w-0">
@@ -273,10 +273,7 @@ function app() {
       this.$watch('cwd', (v) => localStorage.setItem('agent-link:cwd', v));
       this.$watch('model', (v) => localStorage.setItem('agent-link:model', v));
       this.$watch('sidebarCollapsed', (v) => localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(v)));
-    },
-
-    normalizeSidebarWidth(width) {
-      return normalizeSidebarWidthValue(width);
+      this.$watch('sidebarWidth', (v) => localStorage.setItem(SIDEBAR_WIDTH_KEY, String(normalizeSidebarWidthValue(v))));
     },
 
     toggleSidebar() {
@@ -289,8 +286,7 @@ function app() {
 
     resizeSidebarBy(delta) {
       if (this.sidebarCollapsed) return;
-      this.sidebarWidth = this.normalizeSidebarWidth(this.sidebarWidth + delta);
-      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(this.sidebarWidth));
+      this.sidebarWidth = normalizeSidebarWidthValue(this.sidebarWidth + delta);
     },
 
     handleResizeKeydown(event) {
@@ -302,12 +298,17 @@ function app() {
 
     startResize(event) {
       if (this.sidebarCollapsed) return;
-      const startX = event.clientX;
+      const startX = event.touches?.[0]?.clientX ?? event.clientX;
       const startWidth = this.sidebarWidth;
       let frame = null;
       let nextWidth = this.sidebarWidth;
+      const previousUserSelect = document.body.style.userSelect;
+      document.body.style.userSelect = 'none';
       const onMove = (e) => {
-        nextWidth = this.normalizeSidebarWidth(startWidth + (e.clientX - startX));
+        if (e.cancelable) e.preventDefault();
+        const clientX = e.touches?.[0]?.clientX ?? e.clientX;
+        if (typeof clientX !== 'number') return;
+        nextWidth = normalizeSidebarWidthValue(startWidth + (clientX - startX));
         if (frame) return;
         frame = requestAnimationFrame(() => {
           this.sidebarWidth = nextWidth;
@@ -317,12 +318,16 @@ function app() {
       const onUp = () => {
         if (frame) cancelAnimationFrame(frame);
         this.sidebarWidth = nextWidth;
-        localStorage.setItem(SIDEBAR_WIDTH_KEY, String(this.sidebarWidth));
+        document.body.style.userSelect = previousUserSelect;
         window.removeEventListener('mousemove', onMove);
         window.removeEventListener('mouseup', onUp);
+        window.removeEventListener('touchmove', onMove);
+        window.removeEventListener('touchend', onUp);
       };
       window.addEventListener('mousemove', onMove);
       window.addEventListener('mouseup', onUp);
+      window.addEventListener('touchmove', onMove, { passive: false });
+      window.addEventListener('touchend', onUp);
     },
 
     // Dispatch event to messages component
