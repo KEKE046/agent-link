@@ -110,14 +110,14 @@ app.get("/api/active", (c) => {
   return c.json(sessions.getActiveIds());
 });
 
-// Serve static files from src/public
-app.use("/*", serveStatic({ root: "./src/public" }));
-
 // Serve index.html
 app.get("/", async (c) => {
   const file = Bun.file(import.meta.dir + "/public/index.html");
   return c.html(await file.text());
 });
+
+// Serve static files from src/public
+app.use("/*", serveStatic({ root: "./src/public" }));
 
 export default {
   port: 3456,

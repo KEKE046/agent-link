@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "bun run dev:css & bun --watch src/server.ts",
+    "dev": "npx concurrently -k \"bun run dev:css\" \"bun --watch src/server.ts\"",
     "dev:css": "bunx @tailwindcss/cli -i src/public/tailwind.input.css -o src/public/styles.css --watch",
     "build:css": "bunx @tailwindcss/cli -i src/public/tailwind.input.css -o src/public/styles.css --minify"
   },
@@ -14,6 +14,7 @@
   "devDependencies": {
     "@tailwindcss/cli": "^4.2.2",
     "@types/bun": "^1.3.11",
+    "concurrently": "^9.1.2",
     "tailwindcss": "^4.2.2"
   }
 }
