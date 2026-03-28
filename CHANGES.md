@@ -1,5 +1,16 @@
 # Agent Link - Changes
 
+## v0.2.0
+
+- Sidebar sessions grouped by cwd with collapsible expand/collapse
+- Load modal sessions grouped by cwd, shows all sessions by default
+- Groups auto-expand when creating, loading, or switching to a session
+- "+ New" clears view immediately; session created on first send
+- Status bar shows full session ID without truncation
+- Load more button only appears when more results may exist
+- Fix: append mode error no longer clears loaded sessions
+- Added `/release` workspace command for changelog + commit
+
 ## v0.1.0
 
 - Web UI for Claude Code via browser (Alpine.js + Tailwind CSS)

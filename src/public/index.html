@@ -47,18 +47,31 @@
       <button @click="loadSessions()" class="flex-1 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-sm">Load</button>
     </div>
     <div class="flex-1 overflow-y-auto">
-      <template x-for="s in managed" :key="s.sessionId">
-        <div @click="switchSession(s.sessionId)"
-             :class="currentId === s.sessionId ? 'bg-gray-800 border-l-2 border-blue-400' : 'border-l-2 border-transparent'"
-             class="px-3 py-2.5 cursor-pointer hover:bg-gray-800/50 relative group">
-          <div class="flex items-center gap-2">
-            <span x-show="activeSet.has(s.sessionId)" class="w-2 h-2 rounded-full bg-green-400 flex-shrink-0" :class="activeSet.has(s.sessionId) && 'animate-pulse'"></span>
-            <span x-show="!activeSet.has(s.sessionId)" class="w-2 h-2 rounded-full bg-gray-600 flex-shrink-0"></span>
-            <span class="text-sm truncate" x-text="s.label || s.sessionId.slice(0, 8)"></span>
+      <template x-for="g in groupedManaged" :key="g.cwd">
+        <div>
+          <div @click="toggleGroup(g.cwd)"
+               class="px-3 py-2 flex items-center gap-1.5 cursor-pointer hover:bg-gray-800/50 text-xs text-gray-400 sticky top-0 bg-gray-900 border-b border-gray-800/50">
+            <span x-text="expandedGroups.has(g.cwd) ? '▾' : '▸'" class="text-gray-600 w-3"></span>
+            <span class="truncate flex-1 font-medium" x-text="g.cwd"></span>
+            <span class="text-gray-600" x-text="g.sessions.length"></span>
           </div>
-          <div class="text-xs text-gray-500 truncate mt-0.5 pl-4" x-text="s.cwd"></div>
-          <button @click.stop="removeManaged(s.sessionId)"
-                  class="absolute right-2 top-2 text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 text-xs">x</button>
+          <template x-if="expandedGroups.has(g.cwd)">
+            <div>
+              <template x-for="s in g.sessions" :key="s.sessionId">
+                <div @click="switchSession(s.sessionId)"
+                     :class="currentId === s.sessionId ? 'bg-gray-800 border-l-2 border-blue-400' : 'border-l-2 border-transparent'"
+                     class="pl-5 pr-3 py-2 cursor-pointer hover:bg-gray-800/50 relative group">
+                  <div class="flex items-center gap-2">
+                    <span x-show="activeSet.has(s.sessionId)" class="w-2 h-2 rounded-full bg-green-400 flex-shrink-0" :class="activeSet.has(s.sessionId) && 'animate-pulse'"></span>
+                    <span x-show="!activeSet.has(s.sessionId)" class="w-2 h-2 rounded-full bg-gray-600 flex-shrink-0"></span>
+                    <span class="text-sm truncate" x-text="s.label || s.sessionId.slice(0, 8)"></span>
+                  </div>
+                  <button @click.stop="removeManaged(s.sessionId)"
+                          class="absolute right-2 top-1.5 text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 text-xs">x</button>
+                </div>
+              </template>
+            </div>
+          </template>
         </div>
       </template>
       <div x-show="managed.length === 0" class="p-4 text-gray-600 text-sm text-center">No sessions</div>
@@ -224,20 +237,31 @@
       </div>
       <div class="flex-1 overflow-y-auto">
         <div x-show="browseLoading" class="p-4 text-gray-500 text-sm text-center">Loading...</div>
-        <template x-for="s in browseSessions" :key="s.sessionId">
-          <div @click="addToManaged(s)"
-               class="px-4 py-3 hover:bg-gray-800 cursor-pointer border-b border-gray-800/50">
-            <div class="text-sm" x-text="s.summary || s.sessionId.slice(0, 12)"></div>
-            <div class="text-xs text-gray-500 flex gap-3 mt-1">
-              <span x-text="s.cwd || ''"></span>
-              <span x-text="s.lastModified ? new Date(s.lastModified).toLocaleString() : ''"></span>
+        <template x-for="g in groupedBrowse" :key="g.cwd">
+          <div>
+            <div @click="browseExpanded.has(g.cwd) ? browseExpanded.delete(g.cwd) : browseExpanded.add(g.cwd); browseExpanded = new Set(browseExpanded)"
+                 class="px-4 py-2 flex items-center gap-1.5 cursor-pointer hover:bg-gray-800/50 text-xs text-gray-400 sticky top-0 bg-gray-900 border-b border-gray-800/50">
+              <span x-text="browseExpanded.has(g.cwd) ? '▾' : '▸'" class="text-gray-600 w-3"></span>
+              <span class="truncate flex-1 font-medium" x-text="g.cwd"></span>
+              <span class="text-gray-600" x-text="g.sessions.length"></span>
             </div>
+            <template x-if="browseExpanded.has(g.cwd)">
+              <div>
+                <template x-for="s in g.sessions" :key="s.sessionId">
+                  <div @click="addToManaged(s)"
+                       class="pl-7 pr-4 py-2 hover:bg-gray-800 cursor-pointer border-b border-gray-800/50">
+                    <div class="text-sm truncate" x-text="s.summary || s.sessionId.slice(0, 12)"></div>
+                    <div class="text-xs text-gray-500 mt-0.5" x-text="s.lastModified ? new Date(s.lastModified).toLocaleString() : ''"></div>
+                  </div>
+                </template>
+              </div>
+            </template>
           </div>
         </template>
         <div x-show="!browseLoading && browseSessions.length === 0" class="p-4 text-gray-600 text-sm text-center">
           No sessions found
         </div>
-        <button x-show="browseSessions.length >= browseLimit"
+        <button x-show="browseHasMore"
                 @click="browseOffset += browseLimit; fetchBrowseSessions(true)"
                 class="w-full py-2 text-sm text-gray-500 hover:text-gray-300 hover:bg-gray-800">Load more...</button>
       </div>
@@ -262,6 +286,7 @@ function app() {
     totalCost: 0,
     totalIn: 0,
     totalOut: 0,
+    expandedGroups: new Set(),
 
     // Load modal
     showLoadModal: false,
@@ -270,6 +295,8 @@ function app() {
     browseCwd: '',
     browseLimit: 30,
     browseOffset: 0,
+    browseExpanded: new Set(),
+    browseHasMore: false,
 
     init() {
       if (!this.cwd) this.cwd = window.location.hostname === 'localhost' ? '.' : '/';
@@ -289,6 +316,40 @@ function app() {
 
     saveManaged() {
       localStorage.setItem('agent-link:managed', JSON.stringify(this.managed));
+    },
+
+    get groupedManaged() {
+      const map = new Map();
+      for (const s of this.managed) {
+        const key = s.cwd || '(unknown)';
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(s);
+      }
+      return Array.from(map, ([cwd, sessions]) => ({ cwd, sessions }));
+    },
+
+    get groupedBrowse() {
+      const map = new Map();
+      for (const s of this.browseSessions) {
+        const key = s.cwd || '(unknown)';
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(s);
+      }
+      return Array.from(map, ([cwd, sessions]) => ({ cwd, sessions }));
+    },
+
+    toggleGroup(cwd) {
+      if (this.expandedGroups.has(cwd)) {
+        this.expandedGroups.delete(cwd);
+      } else {
+        this.expandedGroups.add(cwd);
+      }
+      this.expandedGroups = new Set(this.expandedGroups);
+    },
+
+    expandGroup(cwd) {
+      this.expandedGroups.add(cwd || '(unknown)');
+      this.expandedGroups = new Set(this.expandedGroups);
     },
 
     newSession() {
@@ -330,6 +391,7 @@ function app() {
             label: prompt.slice(0, 40),
           });
           this.saveManaged();
+          this.expandGroup(this.cwd);
           this.activeSet.add(data.sessionId);
           this.connectSSE(data.sessionId);
         } catch (err) {
@@ -401,6 +463,7 @@ function app() {
 
       const s = this.managed.find(s => s.sessionId === id);
       if (s) {
+        this.expandGroup(s.cwd);
         this.cwd = s.cwd || this.cwd;
         if (s.model) this.model = s.model;
       }
@@ -549,9 +612,10 @@ function app() {
     // Load modal
     async loadSessions() {
       this.showLoadModal = true;
-      this.browseCwd = this.cwd;
+      this.browseCwd = '';
       this.browseOffset = 0;
       this.browseSessions = [];
+      this.browseExpanded = new Set();
       this.fetchBrowseSessions();
     },
 
@@ -565,13 +629,15 @@ function app() {
         if (this.browseCwd) params.set('cwd', this.browseCwd);
         const res = await fetch(`/api/sessions?${params}`);
         const data = await res.json();
+        this.browseHasMore = Array.isArray(data) && data.length >= this.browseLimit;
         if (append) {
           this.browseSessions = [...this.browseSessions, ...data];
         } else {
           this.browseSessions = data;
         }
       } catch {
-        this.browseSessions = [];
+        if (!append) this.browseSessions = [];
+        this.browseHasMore = false;
       }
       this.browseLoading = false;
     },
@@ -585,6 +651,7 @@ function app() {
           label: session.summary || session.firstPrompt?.slice(0, 40) || session.sessionId.slice(0, 12),
         });
         this.saveManaged();
+        this.expandGroup(session.cwd || this.cwd);
       }
       this.showLoadModal = false;
       this.switchSession(session.sessionId);
