@@ -305,7 +305,7 @@ function app() {
       const previousUserSelect = document.body.style.userSelect;
       document.body.style.userSelect = 'none';
       const onMove = (e) => {
-        if (e.cancelable) e.preventDefault();
+        if (e.type === 'touchmove' && e.cancelable) e.preventDefault();
         const clientX = e.touches?.[0]?.clientX ?? e.clientX;
         if (typeof clientX !== 'number') return;
         nextWidth = normalizeSidebarWidthValue(startWidth + (clientX - startX));
