@@ -424,7 +424,7 @@ export default {
       return new Response("WebSocket upgrade failed", { status: 500 });
     }
 
-    // VSCode tunnel: /vscode/<nodeId>/<encoded-cwd>/...
+    // VSCode tunnel: /vscode/<nodeId>/<id>/...
     if (url.pathname.startsWith("/vscode/")) {
       const parts = url.pathname.split("/");
       const nodeId = parts[2] || "";

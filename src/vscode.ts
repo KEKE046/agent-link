@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
@@ -34,7 +35,7 @@ const vscodeServersDir = join(vscodeRoot, "cli", "servers");
 let shutdownHookRegistered = false;
 
 function getId(cwd: string): string {
-  return encodeURIComponent(cwd);
+  return createHash("sha256").update(cwd).digest("hex").slice(0, 12);
 }
 
 function getBinaryPath(commit: string): string {
