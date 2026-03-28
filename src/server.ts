@@ -16,10 +16,6 @@ import stylesCss from "./public/styles.css" with { type: "text" };
 const app = new Hono();
 const isDev = Bun.env.NODE_ENV === "development";
 
-interface ProxySocketData {
-  upstream?: WebSocket;
-}
-
 async function readAsset(path: string, embedded: string): Promise<string> {
   if (!isDev) return embedded;
   const file = Bun.file(import.meta.dir + path);
@@ -44,14 +40,22 @@ function rewriteRemoteAuthority(html: string, authority: string): string {
     );
 }
 
-function requestBodyForProxy(req: Request) {
-  return ["GET", "HEAD", "OPTIONS", "TRACE"].includes(req.method)
-    ? undefined
-    : req.body;
-}
-
 function isWebSocketUpgrade(req: Request): boolean {
   return req.headers.get("upgrade")?.toLowerCase() === "websocket";
+}
+
+function buildVscodeTargetUrl(req: Request, activePort: number): URL {
+  const targetUrl = new URL(req.url);
+  targetUrl.protocol = "http:";
+  targetUrl.hostname = "127.0.0.1";
+  targetUrl.port = String(activePort);
+  return targetUrl;
+}
+
+function shouldRewriteHtml(req: Request): boolean {
+  if (req.method !== "GET") return false;
+  const accept = req.headers.get("accept") || "";
+  return accept.includes("text/html");
 }
 
 // API: Start new query or resume existing session
@@ -213,100 +217,42 @@ export default {
   // Reverse proxy for /vscode/{encoded-cwd}/...
   // - HTTP: forward to matching local serve-web port
   // - HTML: rewrite remoteAuthority to current proxy authority so follow-up API/WS go through proxy
-  // - WS: upgrade client socket and bridge to upstream serve-web websocket
-  fetch: async (req: Request, server: Bun.Server<ProxySocketData>) => {
+  // - WS: handled by Bun.proxy upgrade support
+  fetch: async (req: Request) => {
     const url = new URL(req.url);
     if (url.pathname.startsWith("/vscode/")) {
       const id = url.pathname.split("/")[2] || "";
       const active = getActiveServerById(id);
       if (!active) return new Response("VSCode server not found", { status: 404 });
 
-      const targetUrl = new URL(req.url);
-      targetUrl.protocol = "http:";
-      targetUrl.hostname = "127.0.0.1";
-      targetUrl.port = String(active.port);
+      const targetUrl = buildVscodeTargetUrl(req, active.port);
 
       if (isWebSocketUpgrade(req)) {
-        const upstream = new WebSocket(targetUrl.toString().replace(/^http:/, "ws:"));
-        try {
-          await new Promise<void>((resolve, reject) => {
-            upstream.addEventListener("open", () => resolve(), { once: true });
-            upstream.addEventListener(
-              "error",
-              () => reject(new Error("Failed to connect upstream WS")),
-              { once: true }
-            );
-          });
-        } catch {
-          upstream.close();
-          return new Response("Failed to connect websocket upstream", {
-            status: 502,
-          });
-        }
-        if (!server.upgrade(req, { data: { upstream } satisfies ProxySocketData })) {
-          upstream.close();
-          return new Response("WebSocket upgrade failed", { status: 500 });
-        }
-        return undefined;
+        return Bun.proxy(req, targetUrl);
       }
 
-      const headers = new Headers(req.headers);
-      headers.delete("accept-encoding");
-      headers.delete("host");
-
-      const resp = await fetch(targetUrl, {
-        method: req.method,
-        headers,
-        body: requestBodyForProxy(req),
-        redirect: "manual",
-      });
-
-      const contentType = resp.headers.get("content-type") || "";
-      if (contentType.includes("text/html")) {
-        const html = rewriteRemoteAuthority(await resp.text(), getProxyAuthority(req));
-        const outHeaders = new Headers(resp.headers);
-        outHeaders.delete("content-length");
-        return new Response(html, { status: resp.status, headers: outHeaders });
+      if (shouldRewriteHtml(req)) {
+        const headers = new Headers(req.headers);
+        headers.set("accept-encoding", "identity");
+        const resp = await fetch(targetUrl, {
+          method: req.method,
+          headers,
+          redirect: "manual",
+        });
+        const contentType = resp.headers.get("content-type") || "";
+        if (contentType.includes("text/html")) {
+          const html = rewriteRemoteAuthority(
+            await resp.text(),
+            getProxyAuthority(req)
+          );
+          const outHeaders = new Headers(resp.headers);
+          outHeaders.delete("content-length");
+          return new Response(html, { status: resp.status, headers: outHeaders });
+        }
+        return resp;
       }
-      return new Response(resp.body, { status: resp.status, headers: resp.headers });
+      return Bun.proxy(req, targetUrl);
     }
     return app.fetch(req);
-  },
-  websocket: {
-    open(ws: Bun.ServerWebSocket<ProxySocketData>) {
-      const upstream = ws.data?.upstream;
-      if (!upstream) {
-        ws.close();
-        return;
-      }
-      upstream.addEventListener("message", (event) => {
-        const data = event.data;
-        // Upstream frames may be string, ArrayBuffer, Blob...
-        // Only forward types Bun websocket send accepts directly.
-        if (
-          typeof data === "string" ||
-          data instanceof ArrayBuffer ||
-          ArrayBuffer.isView(data)
-        ) {
-          ws.send(data);
-        }
-        // Ignore Blob/other unsupported frame types because Bun server websocket send
-        // expects string/binary payloads only.
-      });
-      upstream.addEventListener("close", () => ws.close());
-      upstream.addEventListener("error", () => ws.close());
-    },
-    message(
-      ws: Bun.ServerWebSocket<ProxySocketData>,
-      message: string | Buffer | ArrayBuffer | Uint8Array
-    ) {
-      const upstream = ws.data?.upstream;
-      if (!upstream || upstream.readyState !== WebSocket.OPEN) return;
-      upstream.send(message);
-    },
-    close(ws: Bun.ServerWebSocket<ProxySocketData>) {
-      const upstream = ws.data?.upstream;
-      if (upstream && upstream.readyState < WebSocket.CLOSING) upstream.close();
-    },
   },
 };
