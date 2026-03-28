@@ -429,7 +429,7 @@ export default {
       const parts = url.pathname.split("/");
       const nodeId = parts[2] || "";
       const node = getNode(nodeId);
-      if (!node || !node.online) {
+      if (!node || !node.online || !node.approved) {
         return new Response("Node not found or offline", { status: 502 });
       }
 
