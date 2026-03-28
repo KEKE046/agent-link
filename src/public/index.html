@@ -50,7 +50,9 @@
 <div x-data="app()" x-cloak class="flex h-screen">
 
   <!-- Sidebar -->
-  <div class="w-64 bg-gray-900 border-r border-gray-800 flex flex-col flex-shrink-0">
+  <div class="bg-gray-900 flex flex-col flex-shrink-0 overflow-hidden transition-[width] duration-200"
+       :style="`width: ${sidebarCollapsed ? 0 : sidebarWidth}px`"
+       :class="sidebarCollapsed ? '' : 'border-r border-gray-800'">
     <div class="p-3 border-b border-gray-800 flex gap-2">
       <button @click="newSession()" class="flex-1 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm">+ New</button>
       <button @click="loadSessions()" class="flex-1 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-sm">Load</button>
@@ -86,12 +88,18 @@
       <div x-show="managed.length === 0" class="p-4 text-gray-600 text-sm text-center">No sessions</div>
     </div>
   </div>
+  <div x-show="!sidebarCollapsed" @mousedown.prevent="startResize($event)"
+       class="hidden md:block w-1 bg-gray-800 hover:bg-gray-700 cursor-col-resize flex-shrink-0"></div>
 
   <!-- Main -->
   <div class="flex-1 flex flex-col min-w-0">
 
     <!-- Header bar -->
     <div class="px-4 py-2 border-b border-gray-800 flex items-center gap-3 text-sm bg-gray-900/50 flex-shrink-0">
+      <button @click="toggleSidebar()"
+              class="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-xs flex-shrink-0"
+              :title="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+              x-text="sidebarCollapsed ? '☰' : '◧'"></button>
       <span class="text-gray-500">cwd:</span>
       <input x-model="cwd" class="bg-transparent text-gray-300 flex-1 outline-none text-sm mono min-w-0" />
       <select x-model="model" class="bg-gray-800 text-gray-300 rounded px-2 py-1 text-xs outline-none">
@@ -226,6 +234,8 @@ function app() {
     totalIn: 0,
     totalOut: 0,
     expandedGroups: new Set(),
+    sidebarWidth: Number(localStorage.getItem('agent-link:sidebar-width') || 256),
+    sidebarCollapsed: localStorage.getItem('agent-link:sidebar-collapsed') === 'true',
 
     showLoadModal: false,
     browseSessions: [],
@@ -238,11 +248,42 @@ function app() {
 
     init() {
       Alpine.store('active', false);
+      this.sidebarWidth = this.clampSidebarWidth(this.sidebarWidth);
+      if (window.innerWidth < 768 && localStorage.getItem('agent-link:sidebar-collapsed') === null) {
+        this.sidebarCollapsed = true;
+      }
       if (!this.cwd) this.cwd = window.location.hostname === 'localhost' ? '.' : '/';
       this.refreshActive();
       setInterval(() => this.refreshActive(), 5000);
       this.$watch('cwd', (v) => localStorage.setItem('agent-link:cwd', v));
       this.$watch('model', (v) => localStorage.setItem('agent-link:model', v));
+      this.$watch('sidebarCollapsed', (v) => localStorage.setItem('agent-link:sidebar-collapsed', String(v)));
+    },
+
+    clampSidebarWidth(width) {
+      return Math.min(480, Math.max(180, width || 256));
+    },
+
+    toggleSidebar() {
+      this.sidebarCollapsed = !this.sidebarCollapsed;
+    },
+
+    startResize(event) {
+      if (this.sidebarCollapsed) return;
+      const startX = event.clientX;
+      const startWidth = this.sidebarWidth;
+      document.body.classList.add('select-none');
+      const onMove = (e) => {
+        this.sidebarWidth = this.clampSidebarWidth(startWidth + (e.clientX - startX));
+      };
+      const onUp = () => {
+        document.body.classList.remove('select-none');
+        localStorage.setItem('agent-link:sidebar-width', String(this.sidebarWidth));
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+      };
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
     },
 
     // Dispatch event to messages component
