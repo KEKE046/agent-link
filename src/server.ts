@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import * as sessions from "./sessions";
+import indexHtml from "./public/index.html" with { type: "text" };
+import rendererJs from "./public/renderer.js" with { type: "text" };
 
 const app = new Hono();
 
@@ -110,17 +112,15 @@ app.get("/api/active", (c) => {
 });
 
 // Serve static assets
-app.get("/renderer.js", async (c) => {
-  const file = Bun.file(import.meta.dir + "/public/renderer.js");
-  return new Response(await file.arrayBuffer(), {
+app.get("/renderer.js", (c) => {
+  return new Response(rendererJs, {
     headers: { "Content-Type": "application/javascript" },
   });
 });
 
 // Serve index.html
-app.get("/", async (c) => {
-  const file = Bun.file(import.meta.dir + "/public/index.html");
-  return c.html(await file.text());
+app.get("/", (c) => {
+  return c.html(indexHtml);
 });
 
 export default {

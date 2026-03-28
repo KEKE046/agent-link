@@ -1,5 +1,11 @@
 # Agent Link - Changes
 
+## v0.4.0
+
+- Backend supports unified single-binary build via Bun `--compile`
+- Frontend static assets are imported and bundled into backend binary
+- Added build scripts: `bun run build` and `bun run build:binary`
+
 ## v0.3.0
 
 - Message rendering extracted to Alpine.js component (`renderer.js`)

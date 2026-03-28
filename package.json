@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "bun --watch src/server.ts"
+    "dev": "bun --watch src/server.ts",
+    "build": "bun build src/server.ts --outdir dist --target bun",
+    "build:binary": "bun build src/server.ts --compile --outfile dist/agent-link"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "latest",
