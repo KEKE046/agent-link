@@ -273,6 +273,7 @@
                   x-show="!vscodeStartedUrl"
                   class="w-full px-3 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 rounded text-sm">Start</button>
           <a x-show="vscodeStartedUrl" :href="vscodeStartedUrl" target="_blank" rel="noopener"
+             @click="showVscodeModal = false"
              class="block w-full px-3 py-2 bg-green-600 hover:bg-green-500 rounded text-sm text-center no-underline text-white">Open VSCode</a>
         </div>
         <div x-show="vscodeTab === 'install'" class="space-y-3">
