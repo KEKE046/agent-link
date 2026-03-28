@@ -117,6 +117,13 @@ app.get("/renderer.js", async (c) => {
   });
 });
 
+app.get("/styles.css", async (c) => {
+  const file = Bun.file(import.meta.dir + "/public/styles.css");
+  return new Response(await file.arrayBuffer(), {
+    headers: { "Content-Type": "text/css; charset=utf-8" },
+  });
+});
+
 // Serve index.html
 app.get("/", async (c) => {
   const file = Bun.file(import.meta.dir + "/public/index.html");
