@@ -1,5 +1,15 @@
 # Agent Link - Changes
 
+## v0.5.0
+
+- Added per-cwd VSCode Server integration in sidebar with start/open and stop controls
+- Added Bun-native `/vscode/<encoded-cwd>/` reverse proxy with WebSocket forwarding
+- Added HTML `remoteAuthority` rewrite so VSCode web + WS traffic stays on proxy endpoint
+- Added VSCode modal with dual tabs:
+  - 启动: installed-version selection + start
+  - 安装: version input (default `1.112.0`), full install script, copyable install command, and session prompt text
+- Added backend `/api/vscode/*` routes for version discovery, lifecycle, active list, and install guidance payload
+
 ## v0.4.0
 
 - Backend supports unified single-binary build via Bun `--compile`

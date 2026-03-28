@@ -1,6 +1,14 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import * as sessions from "./sessions";
+import {
+  getActiveServerById,
+  getInstallCommand,
+  listActiveServers,
+  listInstalledVersions,
+  startVscodeServer,
+  stopVscodeServer,
+} from "./vscode";
 import indexHtml from "./public/index.html" with { type: "text" };
 import rendererJs from "./public/renderer.js" with { type: "text" };
 import stylesCss from "./public/styles.css" with { type: "text" };
@@ -13,6 +21,41 @@ async function readAsset(path: string, embedded: string): Promise<string> {
   const file = Bun.file(import.meta.dir + path);
   if (!(await file.exists())) return embedded;
   return file.text();
+}
+
+// --- VSCode reverse proxy helpers ---
+
+const HOP_HEADERS = new Set([
+  "host", "connection", "keep-alive", "transfer-encoding",
+  "upgrade", "proxy-authorization", "proxy-authenticate", "te", "trailers",
+]);
+
+function proxyHeaders(req: Request, extra?: Record<string, string>): Headers {
+  const h = new Headers();
+  for (const [k, v] of req.headers) {
+    if (!HOP_HEADERS.has(k)) h.set(k, v);
+  }
+  if (extra) for (const [k, v] of Object.entries(extra)) h.set(k, v);
+  return h;
+}
+
+function vscodeTarget(req: Request, port: number): string {
+  const u = new URL(req.url);
+  u.protocol = "http:";
+  u.hostname = "127.0.0.1";
+  u.port = String(port);
+  return u.toString();
+}
+
+function rewriteRemoteAuthority(html: string, authority: string): string {
+  // Only rewrite the first matching configuration token in the HTML payload.
+  // This avoids touching repeated string literals that may appear in bundled JS.
+  return html
+    .replace(/("remoteAuthority"\s*:\s*")[^"]+(")/, `$1${authority}$2`)
+    .replace(
+      /(&quot;remoteAuthority&quot;\s*:\s*&quot;)[^&]+(&quot;)/,
+      `$1${authority}$2`
+    );
 }
 
 // API: Start new query or resume existing session
@@ -120,6 +163,36 @@ app.get("/api/active", (c) => {
   return c.json(sessions.getActiveIds());
 });
 
+app.get("/api/vscode/versions", async (c) => {
+  return c.json(await listInstalledVersions());
+});
+
+app.post("/api/vscode/start", async (c) => {
+  try {
+    const { cwd, commit } = await c.req.json();
+    return c.json(await startVscodeServer(cwd, commit));
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+app.post("/api/vscode/stop", async (c) => {
+  try {
+    const { cwd } = await c.req.json();
+    return c.json({ ok: await stopVscodeServer(cwd) });
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+app.get("/api/vscode/active", (c) => {
+  return c.json(listActiveServers());
+});
+
+app.get("/api/vscode/install-command", (c) => {
+  return c.json(getInstallCommand(c.req.query("version") || undefined));
+});
+
 // Serve static assets
 app.get("/renderer.js", async (c) => {
   return new Response(await readAsset("/public/renderer.js", rendererJs), {
@@ -141,5 +214,64 @@ app.get("/", async (c) => {
 export default {
   port: 3456,
   idleTimeout: 120,
-  fetch: app.fetch,
+  fetch: async (req: Request, server: any) => {
+    const url = new URL(req.url);
+    if (!url.pathname.startsWith("/vscode/")) return app.fetch(req);
+
+    const id = url.pathname.split("/")[2] || "";
+    const active = getActiveServerById(id);
+    if (!active) return new Response("VSCode server not found", { status: 404 });
+
+    const target = vscodeTarget(req, active.port);
+
+    // WebSocket: upgrade + bridge
+    if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
+      const ok = server.upgrade(req, { data: { target: target.replace("http:", "ws:") } });
+      return ok ? undefined : new Response("WebSocket upgrade failed", { status: 500 });
+    }
+
+    // HTML GET: rewrite remoteAuthority so WS/API go through proxy
+    if (req.method === "GET" && req.headers.get("accept")?.includes("text/html")) {
+      const resp = await fetch(target, {
+        method: "GET",
+        headers: proxyHeaders(req, { "accept-encoding": "identity" }),
+        redirect: "manual",
+      });
+      if (resp.headers.get("content-type")?.includes("text/html")) {
+        const authority = req.headers.get("x-forwarded-host") || req.headers.get("host") || "localhost";
+        const html = rewriteRemoteAuthority(await resp.text(), authority);
+        const h = new Headers(resp.headers);
+        h.delete("content-length");
+        return new Response(html, { status: resp.status, headers: h });
+      }
+      return resp;
+    }
+
+    // Everything else: plain proxy
+    return fetch(target, {
+      method: req.method,
+      headers: proxyHeaders(req),
+      body: req.method !== "GET" && req.method !== "HEAD" ? req.body : undefined,
+      redirect: "manual",
+    });
+  },
+  websocket: {
+    open(ws: any) {
+      const upstream = new WebSocket(ws.data.target);
+      ws.data.upstream = upstream;
+      upstream.addEventListener("message", (e: MessageEvent) => {
+        try { ws.send(typeof e.data === "string" ? e.data : new Uint8Array(e.data)); } catch {}
+      });
+      upstream.addEventListener("close", () => { try { ws.close(); } catch {} });
+      upstream.addEventListener("error", () => { try { ws.close(); } catch {} });
+    },
+    message(ws: any, msg: string | Buffer) {
+      const u = ws.data.upstream as WebSocket | undefined;
+      if (u?.readyState === WebSocket.OPEN) u.send(msg);
+    },
+    close(ws: any) {
+      const u = ws.data.upstream as WebSocket | undefined;
+      if (u && u.readyState !== WebSocket.CLOSED) u.close();
+    },
+  },
 };
