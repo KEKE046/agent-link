@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Link</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+  <style>
+    [x-cloak] { display: none !important; }
+    .mono { font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+    @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+    .cursor-blink { animation: blink 1s step-end infinite; }
+    /* Markdown styles */
+    .md-content p { margin: 0.25rem 0; }
+    .md-content pre { background: #1a1a2e; border-radius: 0.375rem; padding: 0.75rem; margin: 0.5rem 0; overflow-x: auto; }
+    .md-content code { font-family: inherit; font-size: 0.85em; }
+    .md-content :not(pre) > code { background: #1a1a2e; padding: 0.1em 0.35em; border-radius: 0.25rem; }
+    .md-content ul, .md-content ol { padding-left: 1.5em; margin: 0.25rem 0; }
+    .md-content ul { list-style: disc; }
+    .md-content ol { list-style: decimal; }
+    .md-content li { margin: 0.1rem 0; }
+    .md-content table { border-collapse: collapse; margin: 0.5rem 0; }
+    .md-content th, .md-content td { border: 1px solid #374151; padding: 0.25rem 0.5rem; text-align: left; }
+    .md-content th { background: #1f2937; }
+    .md-content blockquote { border-left: 3px solid #374151; padding-left: 0.75rem; color: #9ca3af; margin: 0.25rem 0; }
+    .md-content h1, .md-content h2, .md-content h3 { font-weight: 600; margin: 0.5rem 0 0.25rem; }
+    .md-content h1 { font-size: 1.25em; }
+    .md-content h2 { font-size: 1.1em; }
+    .md-content h3 { font-size: 1em; }
+    .md-content a { color: #60a5fa; text-decoration: underline; }
+    .md-content hr { border-color: #374151; margin: 0.5rem 0; }
+  </style>
+</head>
+<body class="bg-gray-950 text-gray-100 h-screen overflow-hidden">
+
+<div x-data="app()" x-cloak class="flex h-screen">
+
+  <!-- Sidebar -->
+  <div class="w-64 bg-gray-900 border-r border-gray-800 flex flex-col flex-shrink-0">
+    <div class="p-3 border-b border-gray-800 flex gap-2">
+      <button @click="newSession()" class="flex-1 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm">+ New</button>
+      <button @click="loadSessions()" class="flex-1 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-sm">Load</button>
+    </div>
+    <div class="flex-1 overflow-y-auto">
+      <template x-for="s in managed" :key="s.sessionId">
+        <div @click="switchSession(s.sessionId)"
+             :class="currentId === s.sessionId ? 'bg-gray-800 border-l-2 border-blue-400' : 'border-l-2 border-transparent'"
+             class="px-3 py-2.5 cursor-pointer hover:bg-gray-800/50 relative group">
+          <div class="flex items-center gap-2">
+            <span x-show="activeSet.has(s.sessionId)" class="w-2 h-2 rounded-full bg-green-400 flex-shrink-0" :class="activeSet.has(s.sessionId) && 'animate-pulse'"></span>
+            <span x-show="!activeSet.has(s.sessionId)" class="w-2 h-2 rounded-full bg-gray-600 flex-shrink-0"></span>
+            <span class="text-sm truncate" x-text="s.label || s.sessionId.slice(0, 8)"></span>
+          </div>
+          <div class="text-xs text-gray-500 truncate mt-0.5 pl-4" x-text="s.cwd"></div>
+          <button @click.stop="removeManaged(s.sessionId)"
+                  class="absolute right-2 top-2 text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 text-xs">x</button>
+        </div>
+      </template>
+      <div x-show="managed.length === 0" class="p-4 text-gray-600 text-sm text-center">No sessions</div>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div class="flex-1 flex flex-col min-w-0">
+
+    <!-- Header bar -->
+    <div class="px-4 py-2 border-b border-gray-800 flex items-center gap-3 text-sm bg-gray-900/50 flex-shrink-0">
+      <span class="text-gray-500">cwd:</span>
+      <input x-model="cwd" class="bg-transparent text-gray-300 flex-1 outline-none text-sm mono min-w-0" />
+      <select x-model="model" class="bg-gray-800 text-gray-300 rounded px-2 py-1 text-xs outline-none">
+        <option value="claude-sonnet-4-6">Sonnet 4.6</option>
+        <option value="claude-opus-4-6">Opus 4.6</option>
+        <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
+      </select>
+      <button x-show="currentId && activeSet.has(currentId)" @click="changeModel()"
+              class="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded">Apply Model</button>
+    </div>
+
+    <!-- Messages area -->
+    <div x-ref="messageArea" class="flex-1 overflow-y-auto p-4 mono text-sm space-y-1">
+      <template x-for="(msg, i) in messages" :key="i">
+        <div>
+          <!-- System init -->
+          <template x-if="msg.type === 'system' && msg.subtype === 'init'">
+            <div class="text-gray-600 text-xs py-1 border-b border-gray-800/50 mb-2">
+              Session <span x-text="msg.session_id?.slice(0,8)"></span>
+              | model: <span x-text="msg.model"></span>
+              | cwd: <span x-text="msg.cwd"></span>
+              | tools: <span x-text="msg.tools?.length || 0"></span>
+            </div>
+          </template>
+
+          <!-- User -->
+          <template x-if="msg.type === 'user'">
+            <div class="py-0.5">
+              <template x-for="block in msg.message?.content || []">
+                <div>
+                  <template x-if="block.type === 'text'">
+                    <div class="text-green-400 whitespace-pre-wrap"><span class="text-green-600/70">~ </span><span x-text="block.text"></span></div>
+                  </template>
+                  <template x-if="block.type === 'tool_result'">
+                    <div class="ml-4 text-xs border-l border-gray-800 pl-2 max-h-40 overflow-y-auto text-gray-500">
+                      <template x-for="c in (block.content || [])">
+                        <div x-text="c.text || c.type" class="whitespace-pre-wrap"></div>
+                      </template>
+                      <template x-if="block.is_error">
+                        <span class="text-red-400">(error)</span>
+                      </template>
+                    </div>
+                  </template>
+                </div>
+              </template>
+            </div>
+          </template>
+
+          <!-- Assistant -->
+          <template x-if="msg.type === 'assistant'">
+            <div class="py-0.5">
+              <template x-for="block in msg.message?.content || []">
+                <div>
+                  <template x-if="block.type === 'text'">
+                    <div class="text-gray-200 md-content" x-html="renderMd(block.text)"></div>
+                  </template>
+                  <template x-if="block.type === 'tool_use'">
+                    <div class="text-yellow-400/80 text-xs mt-1">
+                      <span class="font-semibold" x-text="'[' + block.name + ']'"></span>
+                      <span class="text-gray-600 ml-1" x-text="formatToolInput(block.input)"></span>
+                    </div>
+                  </template>
+                </div>
+              </template>
+            </div>
+          </template>
+
+          <!-- Result -->
+          <template x-if="msg.type === 'result'">
+            <div class="text-xs py-1.5 mt-2 border-t border-gray-800/50"
+                 :class="msg.subtype === 'success' ? 'text-cyan-400/70' : 'text-red-400/70'">
+              <span x-text="msg.subtype"></span>
+              | cost: $<span x-text="(msg.total_cost_usd || 0).toFixed(4)"></span>
+              | turns: <span x-text="msg.num_turns"></span>
+              | in: <span x-text="msg.usage?.input_tokens || 0"></span>
+              out: <span x-text="msg.usage?.output_tokens || 0"></span>
+            </div>
+          </template>
+
+          <!-- Error -->
+          <template x-if="msg.type === 'error'">
+            <div class="text-red-400 text-sm py-1" x-text="msg.error"></div>
+          </template>
+        </div>
+      </template>
+
+      <!-- Streaming blocks (finalized parts of current response) -->
+      <template x-for="(block, i) in streaming.blocks" :key="'sb'+i">
+        <div>
+          <template x-if="block.type === 'text'">
+            <div class="whitespace-pre-wrap text-gray-200" x-text="block.text"></div>
+          </template>
+          <template x-if="block.type === 'tool_use'">
+            <div class="text-yellow-400/80 text-xs mt-1">
+              <span class="font-semibold" x-text="'[' + block.name + ']'"></span>
+              <span class="text-gray-600 ml-1" x-text="formatToolInput(block.input)"></span>
+            </div>
+          </template>
+        </div>
+      </template>
+
+      <!-- Streaming text (live typing) -->
+      <div x-show="streaming.text" class="text-gray-200 md-content">
+        <span x-html="renderMd(streaming.text)"></span><span class="cursor-blink text-gray-500">|</span>
+      </div>
+
+      <!-- Active indicator when no streaming text visible -->
+      <div x-show="currentId && activeSet.has(currentId) && !streaming.text && streaming.blocks.length === 0"
+           class="text-gray-600 text-xs py-1">
+        <span class="animate-pulse">thinking...</span>
+      </div>
+    </div>
+
+    <!-- Input area -->
+    <div class="p-3 border-t border-gray-800 bg-gray-900/30 flex-shrink-0">
+      <div class="flex gap-2">
+        <input x-model="inputText"
+               @keydown.enter.prevent="send()"
+               :placeholder="currentId ? 'Send a message...' : 'Start a new session...'"
+               class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm mono outline-none focus:border-gray-500 min-w-0" />
+        <button @click="send()"
+                :disabled="!inputText.trim()"
+                class="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 rounded text-sm">Send</button>
+        <button x-show="currentId && activeSet.has(currentId)"
+                @click="interruptSession()"
+                class="px-3 py-2 bg-red-700 hover:bg-red-600 rounded text-sm">Stop</button>
+      </div>
+    </div>
+
+    <!-- Status bar -->
+    <div class="px-4 py-1 border-t border-gray-800 text-xs text-gray-600 flex gap-4 flex-shrink-0">
+      <span x-text="'cost: $' + totalCost.toFixed(4)"></span>
+      <span x-text="'in: ' + totalIn + ' out: ' + totalOut"></span>
+      <span x-text="currentId || 'no session'"></span>
+      <span x-show="currentId && activeSet.has(currentId)" class="text-green-400">active</span>
+    </div>
+  </div>
+
+  <!-- Load Sessions Modal -->
+  <div x-show="showLoadModal" x-cloak
+       class="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+       @click.self="showLoadModal = false">
+    <div class="bg-gray-900 border border-gray-700 rounded-lg w-[600px] max-h-[70vh] flex flex-col">
+      <div class="p-4 border-b border-gray-800 flex justify-between items-center">
+        <h3 class="text-sm font-semibold">Load Existing Session</h3>
+        <button @click="showLoadModal = false" class="text-gray-500 hover:text-gray-300">x</button>
+      </div>
+      <div class="p-3 border-b border-gray-800">
+        <input x-model="browseCwd" @input.debounce.500ms="fetchBrowseSessions()"
+               placeholder="Filter by cwd..."
+               class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm mono outline-none" />
+      </div>
+      <div class="flex-1 overflow-y-auto">
+        <div x-show="browseLoading" class="p-4 text-gray-500 text-sm text-center">Loading...</div>
+        <template x-for="s in browseSessions" :key="s.sessionId">
+          <div @click="addToManaged(s)"
+               class="px-4 py-3 hover:bg-gray-800 cursor-pointer border-b border-gray-800/50">
+            <div class="text-sm" x-text="s.summary || s.sessionId.slice(0, 12)"></div>
+            <div class="text-xs text-gray-500 flex gap-3 mt-1">
+              <span x-text="s.cwd || ''"></span>
+              <span x-text="s.lastModified ? new Date(s.lastModified).toLocaleString() : ''"></span>
+            </div>
+          </div>
+        </template>
+        <div x-show="!browseLoading && browseSessions.length === 0" class="p-4 text-gray-600 text-sm text-center">
+          No sessions found
+        </div>
+        <button x-show="browseSessions.length >= browseLimit"
+                @click="browseOffset += browseLimit; fetchBrowseSessions(true)"
+                class="w-full py-2 text-sm text-gray-500 hover:text-gray-300 hover:bg-gray-800">Load more...</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function app() {
+  return {
+    // State
+    managed: JSON.parse(localStorage.getItem('agent-link:managed') || '[]'),
+    currentId: null,
+    messages: [],
+    streaming: { text: '', blocks: [], _toolName: '', _toolInput: '', _toolId: '' },
+    inputText: '',
+    cwd: localStorage.getItem('agent-link:cwd') || '',
+    model: localStorage.getItem('agent-link:model') || 'claude-sonnet-4-6',
+    activeSet: new Set(),
+    eventSource: null,
+    seenUuids: new Set(),
+    totalCost: 0,
+    totalIn: 0,
+    totalOut: 0,
+
+    // Load modal
+    showLoadModal: false,
+    browseSessions: [],
+    browseLoading: false,
+    browseCwd: '',
+    browseLimit: 30,
+    browseOffset: 0,
+
+    init() {
+      if (!this.cwd) this.cwd = window.location.hostname === 'localhost' ? '.' : '/';
+      this.refreshActive();
+      setInterval(() => this.refreshActive(), 5000);
+      this.$watch('cwd', (v) => localStorage.setItem('agent-link:cwd', v));
+      this.$watch('model', (v) => localStorage.setItem('agent-link:model', v));
+    },
+
+    async refreshActive() {
+      try {
+        const res = await fetch('/api/active');
+        const ids = await res.json();
+        this.activeSet = new Set(ids);
+      } catch {}
+    },
+
+    saveManaged() {
+      localStorage.setItem('agent-link:managed', JSON.stringify(this.managed));
+    },
+
+    newSession() {
+      this.currentId = null;
+      this.messages = [];
+      this.streaming = { text: '', blocks: [], _toolName: '', _toolInput: '', _toolId: '' };
+      this.seenUuids = new Set();
+      this.totalCost = 0;
+      this.totalIn = 0;
+      this.totalOut = 0;
+      if (this.eventSource) { this.eventSource.close(); this.eventSource = null; }
+      this.$nextTick(() => this.$el.querySelector('input[x-model="inputText"]')?.focus());
+    },
+
+    async send() {
+      if (!this.inputText.trim()) return;
+
+      // No current session — create a new one
+      if (!this.currentId) {
+        const prompt = this.inputText.trim();
+        this.inputText = '';
+        this.messages.push({ type: 'user', message: { content: [{ type: 'text', text: prompt }] } });
+        this.scrollBottom();
+
+        try {
+          const res = await fetch('/api/query', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt, cwd: this.cwd, model: this.model }),
+          });
+          const data = await res.json();
+          if (data.error) { this.messages.push({ type: 'error', error: data.error }); return; }
+
+          this.currentId = data.sessionId;
+          this.managed.unshift({
+            sessionId: data.sessionId,
+            cwd: this.cwd,
+            model: this.model,
+            label: prompt.slice(0, 40),
+          });
+          this.saveManaged();
+          this.activeSet.add(data.sessionId);
+          this.connectSSE(data.sessionId);
+        } catch (err) {
+          this.messages.push({ type: 'error', error: err.message });
+        }
+        return;
+      }
+
+      const prompt = this.inputText.trim();
+      this.inputText = '';
+
+      // Show user message
+      this.messages.push({ type: 'user', message: { content: [{ type: 'text', text: prompt }] } });
+      this.scrollBottom();
+
+      const s = this.managed.find(s => s.sessionId === this.currentId);
+      try {
+        const res = await fetch('/api/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt,
+            sessionId: this.currentId,
+            cwd: s?.cwd || this.cwd,
+            model: s?.model || this.model,
+          }),
+        });
+        const data = await res.json();
+        if (data.error) { this.messages.push({ type: 'error', error: data.error }); return; }
+        this.activeSet.add(this.currentId);
+
+        // Reconnect SSE to get fresh buffer
+        this.connectSSE(this.currentId);
+      } catch (err) {
+        this.messages.push({ type: 'error', error: err.message });
+      }
+    },
+
+    async interruptSession() {
+      if (!this.currentId) return;
+      try {
+        await fetch(`/api/interrupt/${this.currentId}`, { method: 'POST' });
+      } catch {}
+    },
+
+    async changeModel() {
+      if (!this.currentId) return;
+      const s = this.managed.find(s => s.sessionId === this.currentId);
+      if (s) s.model = this.model;
+      this.saveManaged();
+      try {
+        await fetch(`/api/model/${this.currentId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: this.model }),
+        });
+      } catch {}
+    },
+
+    async switchSession(id) {
+      if (this.currentId === id) return;
+      this.currentId = id;
+      this.messages = [];
+      this.streaming = { text: '', blocks: [], _toolName: '', _toolInput: '', _toolId: '' };
+      this.seenUuids = new Set();
+      this.totalCost = 0;
+      this.totalIn = 0;
+      this.totalOut = 0;
+
+      const s = this.managed.find(s => s.sessionId === id);
+      if (s) {
+        this.cwd = s.cwd || this.cwd;
+        if (s.model) this.model = s.model;
+      }
+
+      // Load history from disk
+      try {
+        const cwd = s?.cwd || this.cwd;
+        const res = await fetch(`/api/sessions/${id}/messages?cwd=${encodeURIComponent(cwd)}`);
+        if (res.ok) {
+          const hist = await res.json();
+          this.messages = hist || [];
+          for (const m of this.messages) {
+            if (m.uuid) this.seenUuids.add(m.uuid);
+          }
+        }
+      } catch {}
+
+      // Connect SSE for live events (buffer replay for active sessions)
+      this.connectSSE(id);
+      this.scrollBottom();
+    },
+
+    connectSSE(id) {
+      if (this.eventSource) this.eventSource.close();
+      this.eventSource = new EventSource(`/api/events/${id}`);
+      this.eventSource.addEventListener('message', (e) => {
+        if (this.currentId !== id) return;
+        try {
+          const msg = JSON.parse(e.data);
+          this.handleEvent(msg);
+        } catch {}
+      });
+    },
+
+    handleEvent(msg) {
+      // Dedup finalized messages by UUID
+      if (msg.uuid && msg.type !== 'stream_event') {
+        if (this.seenUuids.has(msg.uuid)) {
+          // Already have this message from history — clear any streaming state
+          // that was building up for it
+          if (msg.type === 'assistant') {
+            this.streaming = { text: '', blocks: [], _toolName: '', _toolInput: '', _toolId: '' };
+          }
+          return;
+        }
+        this.seenUuids.add(msg.uuid);
+      }
+
+      if (msg.type === 'stream_event') {
+        this.handleStreamEvent(msg.event);
+      } else if (msg.type === 'assistant') {
+        // Finalize: replace streaming with actual message
+        this.streaming = { text: '', blocks: [], _toolName: '', _toolInput: '', _toolId: '' };
+        this.messages.push(msg);
+      } else if (msg.type === 'user') {
+        this.messages.push(msg);
+      } else if (msg.type === 'result') {
+        this.totalCost += msg.total_cost_usd || 0;
+        this.totalIn += msg.usage?.input_tokens || 0;
+        this.totalOut += msg.usage?.output_tokens || 0;
+        this.messages.push(msg);
+      } else if (msg.type === 'system') {
+        // Skip init replay if we already have history loaded
+        if (msg.subtype === 'init' && this.seenUuids.size > 0) return;
+        this.messages.push(msg);
+      } else if (msg.type === 'status') {
+        if (msg.status === 'idle') {
+          this.activeSet.delete(this.currentId);
+          this.activeSet = new Set(this.activeSet);
+        }
+      } else if (msg.type === 'error') {
+        this.messages.push(msg);
+      }
+
+      this.scrollBottom();
+    },
+
+    handleStreamEvent(event) {
+      if (!event) return;
+
+      if (event.type === 'content_block_start') {
+        const cb = event.content_block;
+        if (cb?.type === 'text') {
+          // Flush any existing text
+          if (this.streaming.text) {
+            this.streaming.blocks.push({ type: 'text', text: this.streaming.text });
+            this.streaming.text = '';
+          }
+        } else if (cb?.type === 'tool_use') {
+          if (this.streaming.text) {
+            this.streaming.blocks.push({ type: 'text', text: this.streaming.text });
+            this.streaming.text = '';
+          }
+          this.streaming._toolName = cb.name;
+          this.streaming._toolInput = '';
+          this.streaming._toolId = cb.id;
+        }
+      } else if (event.type === 'content_block_delta') {
+        const d = event.delta;
+        if (d?.type === 'text_delta') {
+          this.streaming.text += d.text;
+        } else if (d?.type === 'input_json_delta') {
+          this.streaming._toolInput += d.partial_json;
+        }
+      } else if (event.type === 'content_block_stop') {
+        if (this.streaming._toolName) {
+          let input = {};
+          try { input = JSON.parse(this.streaming._toolInput || '{}'); } catch {}
+          this.streaming.blocks.push({
+            type: 'tool_use',
+            name: this.streaming._toolName,
+            input,
+            id: this.streaming._toolId,
+          });
+          this.streaming._toolName = '';
+          this.streaming._toolInput = '';
+          this.streaming._toolId = '';
+        }
+      }
+
+      this.scrollBottom();
+    },
+
+    scrollBottom() {
+      this.$nextTick(() => {
+        const el = this.$refs.messageArea;
+        if (el) el.scrollTop = el.scrollHeight;
+      });
+    },
+
+    formatToolInput(input) {
+      if (!input) return '';
+      const s = JSON.stringify(input);
+      return s.length > 120 ? s.slice(0, 120) + '...' : s;
+    },
+
+    renderMd(text) {
+      if (!text) return '';
+      try {
+        return marked.parse(text, { breaks: true });
+      } catch {
+        return text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      }
+    },
+
+    // Load modal
+    async loadSessions() {
+      this.showLoadModal = true;
+      this.browseCwd = this.cwd;
+      this.browseOffset = 0;
+      this.browseSessions = [];
+      this.fetchBrowseSessions();
+    },
+
+    async fetchBrowseSessions(append = false) {
+      this.browseLoading = true;
+      try {
+        const params = new URLSearchParams({
+          limit: String(this.browseLimit),
+          offset: String(this.browseOffset),
+        });
+        if (this.browseCwd) params.set('cwd', this.browseCwd);
+        const res = await fetch(`/api/sessions?${params}`);
+        const data = await res.json();
+        if (append) {
+          this.browseSessions = [...this.browseSessions, ...data];
+        } else {
+          this.browseSessions = data;
+        }
+      } catch {
+        this.browseSessions = [];
+      }
+      this.browseLoading = false;
+    },
+
+    addToManaged(session) {
+      if (!this.managed.find(s => s.sessionId === session.sessionId)) {
+        this.managed.unshift({
+          sessionId: session.sessionId,
+          cwd: session.cwd || this.cwd,
+          model: '',
+          label: session.summary || session.firstPrompt?.slice(0, 40) || session.sessionId.slice(0, 12),
+        });
+        this.saveManaged();
+      }
+      this.showLoadModal = false;
+      this.switchSession(session.sessionId);
+    },
+
+    removeManaged(id) {
+      this.managed = this.managed.filter(s => s.sessionId !== id);
+      this.saveManaged();
+      if (this.currentId === id) {
+        this.currentId = null;
+        this.messages = [];
+        if (this.eventSource) this.eventSource.close();
+      }
+    },
+  };
+}
+</script>
+
+</body>
+</html>
