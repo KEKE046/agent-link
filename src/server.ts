@@ -127,7 +127,7 @@ app.get("/renderer.js", async (c) => {
   });
 });
 
-app.get("/styles.css", async () => {
+app.get("/styles.css", async (c) => {
   return new Response(await readAsset("/public/styles.css", stylesCss), {
     headers: { "Content-Type": "text/css; charset=utf-8" },
   });
