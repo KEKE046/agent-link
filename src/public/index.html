@@ -58,41 +58,106 @@
       <button @click="loadSessions()" class="flex-1 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-sm">Load</button>
     </div>
     <div class="flex-1 overflow-y-auto">
-      <template x-for="g in groupedManaged" :key="g.cwd">
+      <!-- Panel mode: group by node then cwd -->
+      <template x-if="panelMode">
         <div>
-          <div @click="toggleGroup(g.cwd)"
-               class="px-3 py-2 flex items-center gap-1.5 cursor-pointer hover:bg-gray-800/50 text-xs text-gray-400 sticky top-0 bg-gray-900 border-b border-gray-800/50">
-            <span x-text="expandedGroups.has(g.cwd) ? '▾' : '▸'" class="text-gray-600 w-3"></span>
-            <span class="truncate flex-1 font-medium" x-text="g.cwd"></span>
-            <a x-show="isVscodeActive(g.cwd)"
-              @click.stop
-              :href="vscodeUrl(g.cwd)" target="_blank" rel="noopener"
-              title="Open VSCode"
-              class="px-1.5 py-0.5 rounded hover:bg-gray-700 text-[11px] text-blue-300 no-underline">VS</a>
-            <button x-show="!isVscodeActive(g.cwd)"
-              @click.stop="openVscode(g.cwd)"
-              title="Start VSCode"
-              class="px-1.5 py-0.5 rounded hover:bg-gray-700 text-[11px] text-gray-500 hover:text-gray-300">VS</button>
-            <button x-show="isVscodeActive(g.cwd)"
-                    @click.stop="stopVscode(g.cwd)"
-                    aria-label="Stop VSCode server"
-                    title="Stop VSCode"
-                    class="px-1 py-0.5 rounded text-[10px] text-red-300 hover:bg-red-900/30">Stop</button>
-            <span class="text-gray-600" x-text="g.sessions.length"></span>
-          </div>
-          <template x-if="expandedGroups.has(g.cwd)">
+          <template x-for="n in groupedByNode" :key="n.nodeId">
             <div>
-              <template x-for="s in g.sessions" :key="s.sessionId">
-                <div @click="switchSession(s.sessionId)"
-                     :class="currentId === s.sessionId ? 'bg-gray-800 border-l-2 border-blue-400' : 'border-l-2 border-transparent'"
-                     class="pl-5 pr-3 py-2 cursor-pointer hover:bg-gray-800/50 relative group">
-                  <div class="flex items-center gap-2">
-                    <span x-show="activeSet.has(s.sessionId)" class="w-2 h-2 rounded-full bg-green-400 flex-shrink-0" :class="activeSet.has(s.sessionId) && 'animate-pulse'"></span>
-                    <span x-show="!activeSet.has(s.sessionId)" class="w-2 h-2 rounded-full bg-gray-600 flex-shrink-0"></span>
-                    <span class="text-sm truncate" x-text="s.label || s.sessionId.slice(0, 8)"></span>
-                  </div>
-                  <button @click.stop="removeManaged(s.sessionId)"
-                          class="absolute right-2 top-1.5 text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 text-xs">x</button>
+              <div @click="toggleGroup('node:' + n.nodeId)"
+                   class="px-3 py-2 flex items-center gap-1.5 cursor-pointer hover:bg-gray-800/50 text-xs text-gray-300 sticky top-0 bg-gray-900 border-b border-gray-800/50 z-10">
+                <span x-text="expandedGroups.has('node:' + n.nodeId) ? '▾' : '▸'" class="text-gray-600 w-3"></span>
+                <span class="w-2 h-2 rounded-full flex-shrink-0" :class="isNodeOnline(n.nodeId) ? 'bg-green-400' : 'bg-gray-600'"></span>
+                <span class="truncate flex-1 font-semibold" x-text="n.label || n.nodeId"></span>
+              </div>
+              <template x-if="expandedGroups.has('node:' + n.nodeId)">
+                <div>
+                  <template x-for="g in n.cwdGroups" :key="n.nodeId + ':' + g.cwd">
+                    <div>
+                      <div @click="toggleGroup(n.nodeId + ':' + g.cwd)"
+                           class="px-5 py-1.5 flex items-center gap-1.5 cursor-pointer hover:bg-gray-800/50 text-xs text-gray-400 sticky top-7 bg-gray-900 border-b border-gray-800/30">
+                        <span x-text="expandedGroups.has(n.nodeId + ':' + g.cwd) ? '▾' : '▸'" class="text-gray-600 w-3"></span>
+                        <span class="truncate flex-1 font-medium" x-text="g.cwd"></span>
+                        <a x-show="isVscodeActive(g.cwd, n.nodeId)"
+                          @click.stop
+                          :href="vscodeUrl(g.cwd, n.nodeId)" target="_blank" rel="noopener"
+                          title="Open VSCode"
+                          class="px-1.5 py-0.5 rounded hover:bg-gray-700 text-[11px] text-blue-300 no-underline">VS</a>
+                        <button x-show="!isVscodeActive(g.cwd, n.nodeId)"
+                          @click.stop="openVscode(g.cwd, n.nodeId)"
+                          title="Start VSCode"
+                          class="px-1.5 py-0.5 rounded hover:bg-gray-700 text-[11px] text-gray-500 hover:text-gray-300">VS</button>
+                        <button x-show="isVscodeActive(g.cwd, n.nodeId)"
+                                @click.stop="stopVscode(g.cwd, n.nodeId)"
+                                title="Stop VSCode"
+                                class="px-1 py-0.5 rounded text-[10px] text-red-300 hover:bg-red-900/30">Stop</button>
+                        <span class="text-gray-600" x-text="g.sessions.length"></span>
+                      </div>
+                      <template x-if="expandedGroups.has(n.nodeId + ':' + g.cwd)">
+                        <div>
+                          <template x-for="s in g.sessions" :key="s.sessionId">
+                            <div @click="switchSession(s.sessionId)"
+                                 :class="currentId === s.sessionId ? 'bg-gray-800 border-l-2 border-blue-400' : 'border-l-2 border-transparent'"
+                                 class="pl-8 pr-3 py-2 cursor-pointer hover:bg-gray-800/50 relative group"
+                                 :style="isNodeOnline(n.nodeId) ? '' : 'opacity: 0.5'">
+                              <div class="flex items-center gap-2">
+                                <span x-show="activeSet.has(s.sessionId)" class="w-2 h-2 rounded-full bg-green-400 flex-shrink-0 animate-pulse"></span>
+                                <span x-show="!activeSet.has(s.sessionId)" class="w-2 h-2 rounded-full bg-gray-600 flex-shrink-0"></span>
+                                <span class="text-sm truncate" x-text="s.label || s.sessionId.slice(0, 8)"></span>
+                              </div>
+                              <button @click.stop="removeManaged(s.sessionId)"
+                                      class="absolute right-2 top-1.5 text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 text-xs">x</button>
+                            </div>
+                          </template>
+                        </div>
+                      </template>
+                    </div>
+                  </template>
+                </div>
+              </template>
+            </div>
+          </template>
+        </div>
+      </template>
+      <!-- Standalone mode: group by cwd only (original) -->
+      <template x-if="!panelMode">
+        <div>
+          <template x-for="g in groupedManaged" :key="g.cwd">
+            <div>
+              <div @click="toggleGroup(g.cwd)"
+                   class="px-3 py-2 flex items-center gap-1.5 cursor-pointer hover:bg-gray-800/50 text-xs text-gray-400 sticky top-0 bg-gray-900 border-b border-gray-800/50">
+                <span x-text="expandedGroups.has(g.cwd) ? '▾' : '▸'" class="text-gray-600 w-3"></span>
+                <span class="truncate flex-1 font-medium" x-text="g.cwd"></span>
+                <a x-show="isVscodeActive(g.cwd)"
+                  @click.stop
+                  :href="vscodeUrl(g.cwd)" target="_blank" rel="noopener"
+                  title="Open VSCode"
+                  class="px-1.5 py-0.5 rounded hover:bg-gray-700 text-[11px] text-blue-300 no-underline">VS</a>
+                <button x-show="!isVscodeActive(g.cwd)"
+                  @click.stop="openVscode(g.cwd)"
+                  title="Start VSCode"
+                  class="px-1.5 py-0.5 rounded hover:bg-gray-700 text-[11px] text-gray-500 hover:text-gray-300">VS</button>
+                <button x-show="isVscodeActive(g.cwd)"
+                        @click.stop="stopVscode(g.cwd)"
+                        aria-label="Stop VSCode server"
+                        title="Stop VSCode"
+                        class="px-1 py-0.5 rounded text-[10px] text-red-300 hover:bg-red-900/30">Stop</button>
+                <span class="text-gray-600" x-text="g.sessions.length"></span>
+              </div>
+              <template x-if="expandedGroups.has(g.cwd)">
+                <div>
+                  <template x-for="s in g.sessions" :key="s.sessionId">
+                    <div @click="switchSession(s.sessionId)"
+                         :class="currentId === s.sessionId ? 'bg-gray-800 border-l-2 border-blue-400' : 'border-l-2 border-transparent'"
+                         class="pl-5 pr-3 py-2 cursor-pointer hover:bg-gray-800/50 relative group">
+                      <div class="flex items-center gap-2">
+                        <span x-show="activeSet.has(s.sessionId)" class="w-2 h-2 rounded-full bg-green-400 flex-shrink-0" :class="activeSet.has(s.sessionId) && 'animate-pulse'"></span>
+                        <span x-show="!activeSet.has(s.sessionId)" class="w-2 h-2 rounded-full bg-gray-600 flex-shrink-0"></span>
+                        <span class="text-sm truncate" x-text="s.label || s.sessionId.slice(0, 8)"></span>
+                      </div>
+                      <button @click.stop="removeManaged(s.sessionId)"
+                              class="absolute right-2 top-1.5 text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 text-xs">x</button>
+                    </div>
+                  </template>
                 </div>
               </template>
             </div>
@@ -119,6 +184,13 @@
               :aria-expanded="String(!sidebarCollapsed)"
               :title="sidebarToggleLabel()"
               x-text="sidebarCollapsed ? '☰' : '◧'"></button>
+      <template x-if="panelMode">
+        <select x-model="selectedNodeId" class="bg-gray-800 text-gray-300 rounded px-2 py-1 text-xs outline-none">
+          <template x-for="n in nodes" :key="n.nodeId">
+            <option :value="n.nodeId" :disabled="!n.online" x-text="(n.online ? '● ' : '○ ') + (n.label || n.nodeId)"></option>
+          </template>
+        </select>
+      </template>
       <span class="text-gray-500">cwd:</span>
       <input x-model="cwd" class="bg-transparent text-gray-300 flex-1 outline-none text-sm mono min-w-0" />
       <select x-model="model" class="bg-gray-800 text-gray-300 rounded px-2 py-1 text-xs outline-none">
@@ -329,6 +401,7 @@ function app() {
     vscodeActive: {},
     showVscodeModal: false,
     vscodeTargetCwd: '',
+    vscodeTargetNodeId: '',
     vscodeTab: 'start',
     vscodeSelectedCommit: '',
     vscodeInstallVersion: '1.112.0',
@@ -336,16 +409,75 @@ function app() {
     vscodeLoading: false,
     vscodeStartedUrl: '',
 
+    // Panel mode
+    panelMode: false,
+    nodes: [],
+    selectedNodeId: localStorage.getItem('agent-link:nodeId') || '',
+
     init() {
       Alpine.store('active', false);
       if (!this.cwd) this.cwd = window.location.hostname === 'localhost' ? '.' : '/';
+      this.detectPanelMode();
       this.refreshActive();
       this.refreshVscodeActive();
-      setInterval(() => { this.refreshActive(); this.refreshVscodeActive(); }, 5000);
+      setInterval(() => { this.refreshActive(); this.refreshVscodeActive(); if (this.panelMode) this.refreshNodes(); }, 5000);
       this.$watch('cwd', (v) => localStorage.setItem('agent-link:cwd', v));
       this.$watch('model', (v) => localStorage.setItem('agent-link:model', v));
       this.$watch('sidebarCollapsed', (v) => localStorage.setItem('agent-link:sidebar-collapsed', String(v)));
       this.$watch('sidebarWidth', (v) => localStorage.setItem('agent-link:sidebar-width', String(this.clampWidth(v))));
+      this.$watch('selectedNodeId', (v) => localStorage.setItem('agent-link:nodeId', v));
+    },
+
+    async detectPanelMode() {
+      try {
+        const res = await fetch('/api/nodes');
+        if (res.ok) {
+          this.panelMode = true;
+          this.nodes = await res.json();
+          if (!this.selectedNodeId && this.nodes.length > 0) {
+            this.selectedNodeId = (this.nodes.find(n => n.online) || this.nodes[0]).nodeId;
+          }
+        }
+      } catch {
+        this.panelMode = false;
+      }
+    },
+
+    async refreshNodes() {
+      try {
+        const res = await fetch('/api/nodes');
+        if (res.ok) this.nodes = await res.json();
+      } catch {}
+    },
+
+    isNodeOnline(nodeId) {
+      const n = this.nodes.find(n => n.nodeId === nodeId);
+      return n?.online ?? false;
+    },
+
+    get groupedByNode() {
+      // Group managed sessions by nodeId, then by cwd
+      const nodeMap = new Map();
+      // Initialize from known nodes
+      for (const n of this.nodes) {
+        nodeMap.set(n.nodeId, { nodeId: n.nodeId, label: n.label, cwdGroups: [] });
+      }
+      // Group sessions
+      const cwdMap = new Map(); // nodeId:cwd → sessions
+      for (const s of this.managed) {
+        const nid = s.nodeId || '(local)';
+        const key = nid + ':' + (s.cwd || '(unknown)');
+        if (!cwdMap.has(key)) cwdMap.set(key, { nodeId: nid, cwd: s.cwd || '(unknown)', sessions: [] });
+        cwdMap.get(key).sessions.push(s);
+      }
+      // Assign cwd groups to nodes
+      for (const [, group] of cwdMap) {
+        if (!nodeMap.has(group.nodeId)) {
+          nodeMap.set(group.nodeId, { nodeId: group.nodeId, label: group.nodeId, cwdGroups: [] });
+        }
+        nodeMap.get(group.nodeId).cwdGroups.push(group);
+      }
+      return [...nodeMap.values()];
     },
 
     clampWidth(width) {
@@ -423,11 +555,17 @@ function app() {
       } catch {}
     },
 
-    isVscodeActive(cwd) {
+    isVscodeActive(cwd, nodeId) {
+      if (this.panelMode && nodeId) {
+        return !!this.vscodeActive[nodeId + ':' + cwd];
+      }
       return !!this.vscodeActive[cwd];
     },
 
-    vscodeUrl(cwd) {
+    vscodeUrl(cwd, nodeId) {
+      if (this.panelMode && nodeId) {
+        return `/vscode/${encodeURIComponent(nodeId)}/${encodeURIComponent(cwd)}/`;
+      }
       return `/vscode/${encodeURIComponent(cwd)}/`;
     },
 
@@ -436,20 +574,28 @@ function app() {
         const res = await fetch('/api/vscode/active');
         const list = await res.json();
         const map = {};
-        for (const item of list || []) map[item.cwd] = item;
+        for (const item of list || []) {
+          if (item.nodeId) {
+            map[item.nodeId + ':' + item.cwd] = item;
+          } else {
+            map[item.cwd] = item;
+          }
+        }
         this.vscodeActive = map;
       } catch {}
     },
 
-    async openVscode(cwd) {
+    async openVscode(cwd, nodeId) {
       this.vscodeTargetCwd = cwd;
+      this.vscodeTargetNodeId = nodeId || '';
       this.vscodeTab = 'start';
       this.vscodeSelectedCommit = '';
       this.vscodeStartedUrl = '';
       this.vscodeLoading = true;
       this.showVscodeModal = true;
       try {
-        const response = await fetch('/api/vscode/versions');
+        const params = nodeId ? `?nodeId=${encodeURIComponent(nodeId)}` : '';
+        const response = await fetch('/api/vscode/versions' + params);
         this.vscodeVersions = await response.json();
         this.vscodeTab = this.vscodeVersions.length === 0 ? 'install' : 'start';
         await this.fetchInstallInfo();
@@ -476,29 +622,34 @@ function app() {
       if (!this.vscodeTargetCwd || !this.vscodeSelectedCommit) return;
       this.vscodeLoading = true;
       try {
+        const body = { cwd: this.vscodeTargetCwd, commit: this.vscodeSelectedCommit };
+        if (this.vscodeTargetNodeId) body.nodeId = this.vscodeTargetNodeId;
         const res = await fetch('/api/vscode/start', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cwd: this.vscodeTargetCwd, commit: this.vscodeSelectedCommit }),
+          body: JSON.stringify(body),
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
         await this.refreshVscodeActive();
-        this.vscodeStartedUrl = this.vscodeUrl(this.vscodeTargetCwd);
+        this.vscodeStartedUrl = this.vscodeUrl(this.vscodeTargetCwd, this.vscodeTargetNodeId);
       } catch (err) {
         alert(err?.message || 'Failed to start VSCode server');
       }
       this.vscodeLoading = false;
     },
 
-    async stopVscode(cwd) {
-      if (!this.isVscodeActive(cwd)) return;
+    async stopVscode(cwd, nodeId) {
+      const key = nodeId ? nodeId + ':' + cwd : cwd;
+      if (!this.vscodeActive[key]) return;
       if (!confirm(`Stop VSCode server for ${cwd}?`)) return;
       try {
+        const body = { cwd };
+        if (nodeId) body.nodeId = nodeId;
         await fetch('/api/vscode/stop', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cwd }),
+          body: JSON.stringify(body),
         });
       } catch {}
       this.refreshVscodeActive();
@@ -557,19 +708,29 @@ function app() {
         this.inputText = '';
         this.msg('append', { type: 'user', message: { content: [{ type: 'text', text: prompt }] } });
 
+        const nodeId = this.panelMode ? this.selectedNodeId : undefined;
         try {
+          const body = { prompt, cwd: this.cwd, model: this.model };
+          if (nodeId) body.nodeId = nodeId;
           const res = await fetch('/api/query', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt, cwd: this.cwd, model: this.model }),
+            body: JSON.stringify(body),
           });
           const data = await res.json();
           if (data.error) { this.msg('append', { type: 'error', error: data.error }); return; }
 
           this.currentId = data.sessionId;
-          this.managed.unshift({ sessionId: data.sessionId, cwd: this.cwd, model: this.model, label: prompt.slice(0, 40) });
+          const entry = { sessionId: data.sessionId, cwd: this.cwd, model: this.model, label: prompt.slice(0, 40) };
+          if (nodeId) entry.nodeId = nodeId;
+          this.managed.unshift(entry);
           this.saveManaged();
-          this.expandGroup(this.cwd);
+          if (this.panelMode && nodeId) {
+            this.expandGroup('node:' + nodeId);
+            this.expandGroup(nodeId + ':' + this.cwd);
+          } else {
+            this.expandGroup(this.cwd);
+          }
           this.activeSet.add(data.sessionId);
           this.syncActive();
           this.connectSSE(data.sessionId);
@@ -585,10 +746,12 @@ function app() {
 
       const s = this.managed.find(s => s.sessionId === this.currentId);
       try {
+        const body = { prompt, sessionId: this.currentId, cwd: s?.cwd || this.cwd, model: s?.model || this.model };
+        if (s?.nodeId) body.nodeId = s.nodeId;
         const res = await fetch('/api/query', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt, sessionId: this.currentId, cwd: s?.cwd || this.cwd, model: s?.model || this.model }),
+          body: JSON.stringify(body),
         });
         const data = await res.json();
         if (data.error) { this.msg('append', { type: 'error', error: data.error }); return; }
@@ -602,7 +765,10 @@ function app() {
 
     async interruptSession() {
       if (!this.currentId) return;
-      try { await fetch(`/api/interrupt/${this.currentId}`, { method: 'POST' }); } catch {}
+      const s = this.managed.find(s => s.sessionId === this.currentId);
+      const headers = {};
+      if (this.panelMode && s?.nodeId) headers['x-node-id'] = s.nodeId;
+      try { await fetch(`/api/interrupt/${this.currentId}`, { method: 'POST', headers }); } catch {}
     },
 
     async changeModel() {
@@ -611,9 +777,11 @@ function app() {
       if (s) s.model = this.model;
       this.saveManaged();
       try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (this.panelMode && s?.nodeId) headers['x-node-id'] = s.nodeId;
         await fetch(`/api/model/${this.currentId}`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({ model: this.model }),
         });
       } catch {}
@@ -630,14 +798,22 @@ function app() {
 
       const s = this.managed.find(s => s.sessionId === id);
       if (s) {
-        this.expandGroup(s.cwd);
+        if (this.panelMode && s.nodeId) {
+          this.expandGroup('node:' + s.nodeId);
+          this.expandGroup(s.nodeId + ':' + (s.cwd || this.cwd));
+        } else {
+          this.expandGroup(s.cwd);
+        }
         this.cwd = s.cwd || this.cwd;
         if (s.model) this.model = s.model;
+        if (s.nodeId) this.selectedNodeId = s.nodeId;
       }
 
       try {
         const cwd = s?.cwd || this.cwd;
-        const res = await fetch(`/api/sessions/${id}/messages?cwd=${encodeURIComponent(cwd)}`);
+        const params = new URLSearchParams({ cwd });
+        if (this.panelMode && s?.nodeId) params.set('nodeId', s.nodeId);
+        const res = await fetch(`/api/sessions/${id}/messages?${params}`);
         if (res.ok) {
           const msgs = (await res.json()) || [];
           for (const m of msgs) { if (m.uuid) this.seenUuids.add(m.uuid); }
@@ -726,14 +902,21 @@ function app() {
 
     addToManaged(session) {
       if (!this.managed.find(s => s.sessionId === session.sessionId)) {
-        this.managed.unshift({
+        const entry = {
           sessionId: session.sessionId,
           cwd: session.cwd || this.cwd,
           model: '',
           label: session.summary || session.firstPrompt?.slice(0, 40) || session.sessionId.slice(0, 12),
-        });
+        };
+        if (session.nodeId) entry.nodeId = session.nodeId;
+        this.managed.unshift(entry);
         this.saveManaged();
-        this.expandGroup(session.cwd || this.cwd);
+        if (this.panelMode && session.nodeId) {
+          this.expandGroup('node:' + session.nodeId);
+          this.expandGroup(session.nodeId + ':' + (session.cwd || this.cwd));
+        } else {
+          this.expandGroup(session.cwd || this.cwd);
+        }
       }
       this.showLoadModal = false;
       this.switchSession(session.sessionId);

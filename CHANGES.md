@@ -1,5 +1,24 @@
 # Agent Link - Changes
 
+## v0.6.0
+
+- Added Panel+Node distributed architecture: Panel (public) forwards all operations to Nodes (behind NAT) via WebSocket
+- Added `src/protocol.ts` shared WS protocol types between Panel and Node
+- Added `src/panel/server.ts` — Panel HTTP server with same API surface, forwarding to connected Nodes
+- Added `src/panel/nodes.ts` — Node pool management, token auth, session event relay, heartbeat
+- Added `src/panel/tunnel.ts` — HTTP/WS tunnel for VSCode reverse proxy through Node management WS
+- Added `src/node/main.ts` + `connector.ts` — Node entry point with WS auto-reconnect (exponential backoff 1s→60s)
+- Added `src/node/tunnel.ts` — Local VSCode HTTP/WS tunnel handler
+- Frontend auto-detects Panel mode via `/api/nodes` endpoint
+- Sidebar groups by Node → CWD → Session with online/offline indicators (●/○)
+- Node selector dropdown in header bar for new session target
+- Session API calls pass `nodeId` for routing (query param, header, or request body)
+- Load modal aggregates sessions from all online Nodes
+- VSCode tunnel URL includes nodeId dimension: `/vscode/<nodeId>/<encoded-cwd>/`
+- `remoteAuthority` rewrite at Panel side (Node unchanged)
+- Standalone `src/server.ts` preserved, no regressions when running without Panel
+- Added build scripts: `dev:panel`, `dev:node`, `build:panel`, `build:node`, `build:binary:panel`, `build:binary:node`
+
 ## v0.5.0
 
 - Added per-cwd VSCode Server integration in sidebar with start/open and stop controls
