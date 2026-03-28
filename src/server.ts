@@ -23,8 +23,28 @@ async function readAsset(path: string, embedded: string): Promise<string> {
   return file.text();
 }
 
-function getProxyAuthority(req: Request): string {
-  return req.headers.get("host") || req.headers.get("x-forwarded-host") || "localhost";
+// --- VSCode reverse proxy helpers ---
+
+const HOP_HEADERS = new Set([
+  "host", "connection", "keep-alive", "transfer-encoding",
+  "upgrade", "proxy-authorization", "proxy-authenticate", "te", "trailers",
+]);
+
+function proxyHeaders(req: Request, extra?: Record<string, string>): Headers {
+  const h = new Headers();
+  for (const [k, v] of req.headers) {
+    if (!HOP_HEADERS.has(k)) h.set(k, v);
+  }
+  if (extra) for (const [k, v] of Object.entries(extra)) h.set(k, v);
+  return h;
+}
+
+function vscodeTarget(req: Request, port: number): string {
+  const u = new URL(req.url);
+  u.protocol = "http:";
+  u.hostname = "127.0.0.1";
+  u.port = String(port);
+  return u.toString();
 }
 
 function rewriteRemoteAuthority(html: string, authority: string): string {
@@ -36,24 +56,6 @@ function rewriteRemoteAuthority(html: string, authority: string): string {
       /(&quot;remoteAuthority&quot;\s*:\s*&quot;)[^&]+(&quot;)/,
       `$1${authority}$2`
     );
-}
-
-function isWebSocketUpgrade(req: Request): boolean {
-  return req.headers.get("upgrade")?.toLowerCase() === "websocket";
-}
-
-function buildVscodeTargetUrl(req: Request, activePort: number): URL {
-  const targetUrl = new URL(req.url);
-  targetUrl.protocol = "http:";
-  targetUrl.hostname = "127.0.0.1";
-  targetUrl.port = String(activePort);
-  return targetUrl;
-}
-
-function shouldRewriteHtml(req: Request): boolean {
-  if (req.method !== "GET") return false;
-  const accept = req.headers.get("accept") || "";
-  return accept.includes("text/html");
 }
 
 // API: Start new query or resume existing session
@@ -212,45 +214,64 @@ app.get("/", async (c) => {
 export default {
   port: 3456,
   idleTimeout: 120,
-  // Reverse proxy for /vscode/{encoded-cwd}/...
-  // - HTTP: forward to matching local serve-web port
-  // - HTML: rewrite remoteAuthority to current proxy authority so follow-up API/WS go through proxy
-  // - WS: handled by Bun.proxy upgrade support
-  fetch: async (req: Request) => {
+  fetch: async (req: Request, server: any) => {
     const url = new URL(req.url);
-    if (url.pathname.startsWith("/vscode/")) {
-      const id = url.pathname.split("/")[2] || "";
-      const active = getActiveServerById(id);
-      if (!active) return new Response("VSCode server not found", { status: 404 });
+    if (!url.pathname.startsWith("/vscode/")) return app.fetch(req);
 
-      const targetUrl = buildVscodeTargetUrl(req, active.port);
+    const id = url.pathname.split("/")[2] || "";
+    const active = getActiveServerById(id);
+    if (!active) return new Response("VSCode server not found", { status: 404 });
 
-      if (isWebSocketUpgrade(req)) {
-        return Bun.proxy(req, targetUrl);
-      }
+    const target = vscodeTarget(req, active.port);
 
-      if (shouldRewriteHtml(req)) {
-        const headers = new Headers(req.headers);
-        headers.set("accept-encoding", "identity");
-        const resp = await fetch(targetUrl, {
-          method: req.method,
-          headers,
-          redirect: "manual",
-        });
-        const contentType = resp.headers.get("content-type") || "";
-        if (contentType.includes("text/html")) {
-          const html = rewriteRemoteAuthority(
-            await resp.text(),
-            getProxyAuthority(req)
-          );
-          const outHeaders = new Headers(resp.headers);
-          outHeaders.delete("content-length");
-          return new Response(html, { status: resp.status, headers: outHeaders });
-        }
-        return resp;
-      }
-      return Bun.proxy(req, targetUrl);
+    // WebSocket: upgrade + bridge
+    if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
+      const ok = server.upgrade(req, { data: { target: target.replace("http:", "ws:") } });
+      return ok ? undefined : new Response("WebSocket upgrade failed", { status: 500 });
     }
-    return app.fetch(req);
+
+    // HTML GET: rewrite remoteAuthority so WS/API go through proxy
+    if (req.method === "GET" && req.headers.get("accept")?.includes("text/html")) {
+      const resp = await fetch(target, {
+        method: "GET",
+        headers: proxyHeaders(req, { "accept-encoding": "identity" }),
+        redirect: "manual",
+      });
+      if (resp.headers.get("content-type")?.includes("text/html")) {
+        const authority = req.headers.get("x-forwarded-host") || req.headers.get("host") || "localhost";
+        const html = rewriteRemoteAuthority(await resp.text(), authority);
+        const h = new Headers(resp.headers);
+        h.delete("content-length");
+        return new Response(html, { status: resp.status, headers: h });
+      }
+      return resp;
+    }
+
+    // Everything else: plain proxy
+    return fetch(target, {
+      method: req.method,
+      headers: proxyHeaders(req),
+      body: req.method !== "GET" && req.method !== "HEAD" ? req.body : undefined,
+      redirect: "manual",
+    });
+  },
+  websocket: {
+    open(ws: any) {
+      const upstream = new WebSocket(ws.data.target);
+      ws.data.upstream = upstream;
+      upstream.addEventListener("message", (e: MessageEvent) => {
+        try { ws.send(typeof e.data === "string" ? e.data : new Uint8Array(e.data)); } catch {}
+      });
+      upstream.addEventListener("close", () => { try { ws.close(); } catch {} });
+      upstream.addEventListener("error", () => { try { ws.close(); } catch {} });
+    },
+    message(ws: any, msg: string | Buffer) {
+      const u = ws.data.upstream as WebSocket | undefined;
+      if (u?.readyState === WebSocket.OPEN) u.send(msg);
+    },
+    close(ws: any) {
+      const u = ws.data.upstream as WebSocket | undefined;
+      if (u && u.readyState !== WebSocket.CLOSED) u.close();
+    },
   },
 };
