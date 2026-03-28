@@ -226,20 +226,6 @@
 
 <script>
 function app() {
-  const SIDEBAR_WIDTH_KEY = 'agent-link:sidebar-width';
-  const SIDEBAR_COLLAPSED_KEY = 'agent-link:sidebar-collapsed';
-  const DEFAULT_SIDEBAR_WIDTH = 256;
-  const MIN_SIDEBAR_WIDTH = 180;
-  const MAX_SIDEBAR_WIDTH = 480;
-  const MOBILE_BREAKPOINT = 768; // Tailwind `md`
-  const clampSidebarWidthValue = (width) => Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, width));
-  const normalizeSidebarWidthValue = (width) => clampSidebarWidthValue(Number.isFinite(width) ? width : DEFAULT_SIDEBAR_WIDTH);
-  const rawSidebarWidth = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
-  const storedSidebarWidth = normalizeSidebarWidthValue(rawSidebarWidth > 0 ? rawSidebarWidth : DEFAULT_SIDEBAR_WIDTH);
-  const hasStoredSidebarCollapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) !== null;
-  const initialSidebarCollapsed = hasStoredSidebarCollapsed
-    ? localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true'
-    : !window.matchMedia(`(min-width: ${MOBILE_BREAKPOINT}px)`).matches;
   return {
     managed: JSON.parse(localStorage.getItem('agent-link:managed') || '[]'),
     currentId: null,
@@ -253,8 +239,14 @@ function app() {
     totalIn: 0,
     totalOut: 0,
     expandedGroups: new Set(),
-    sidebarWidth: storedSidebarWidth,
-    sidebarCollapsed: initialSidebarCollapsed,
+    sidebarWidth: (() => {
+      const storedWidth = Number(localStorage.getItem('agent-link:sidebar-width'));
+      return Math.min(480, Math.max(180, Number.isFinite(storedWidth) ? storedWidth : 256));
+    })(),
+    sidebarCollapsed: (() => {
+      const storedCollapsed = localStorage.getItem('agent-link:sidebar-collapsed');
+      return storedCollapsed !== null ? storedCollapsed === 'true' : !window.matchMedia('(min-width: 768px)').matches;
+    })(),
 
     showLoadModal: false,
     browseSessions: [],
@@ -272,8 +264,12 @@ function app() {
       setInterval(() => this.refreshActive(), 5000);
       this.$watch('cwd', (v) => localStorage.setItem('agent-link:cwd', v));
       this.$watch('model', (v) => localStorage.setItem('agent-link:model', v));
-      this.$watch('sidebarCollapsed', (v) => localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(v)));
-      this.$watch('sidebarWidth', (v) => localStorage.setItem(SIDEBAR_WIDTH_KEY, String(normalizeSidebarWidthValue(v))));
+      this.$watch('sidebarCollapsed', (v) => localStorage.setItem('agent-link:sidebar-collapsed', String(v)));
+      this.$watch('sidebarWidth', (v) => localStorage.setItem('agent-link:sidebar-width', String(this.clampWidth(v))));
+    },
+
+    clampWidth(width) {
+      return Math.min(480, Math.max(180, Number.isFinite(width) ? width : 256));
     },
 
     toggleSidebar() {
@@ -286,14 +282,14 @@ function app() {
 
     resizeSidebarBy(delta) {
       if (this.sidebarCollapsed) return;
-      this.sidebarWidth = normalizeSidebarWidthValue(this.sidebarWidth + delta);
+      this.sidebarWidth = this.clampWidth(this.sidebarWidth + delta);
     },
 
     handleResizeKeydown(event) {
       if (event.key === 'ArrowLeft') { event.preventDefault(); this.resizeSidebarBy(-12); }
       else if (event.key === 'ArrowRight') { event.preventDefault(); this.resizeSidebarBy(12); }
-      else if (event.key === 'Home') { event.preventDefault(); this.resizeSidebarBy(MIN_SIDEBAR_WIDTH - this.sidebarWidth); }
-      else if (event.key === 'End') { event.preventDefault(); this.resizeSidebarBy(MAX_SIDEBAR_WIDTH - this.sidebarWidth); }
+      else if (event.key === 'Home') { event.preventDefault(); this.resizeSidebarBy(180 - this.sidebarWidth); }
+      else if (event.key === 'End') { event.preventDefault(); this.resizeSidebarBy(480 - this.sidebarWidth); }
     },
 
     startResize(event) {
@@ -308,7 +304,7 @@ function app() {
         if (e.type === 'touchmove' && e.cancelable) e.preventDefault();
         const clientX = e.touches?.[0]?.clientX ?? e.clientX;
         if (typeof clientX !== 'number') return;
-        nextWidth = normalizeSidebarWidthValue(startWidth + (clientX - startX));
+        nextWidth = this.clampWidth(startWidth + (clientX - startX));
         if (frame) return;
         frame = requestAnimationFrame(() => {
           this.sidebarWidth = nextWidth;
