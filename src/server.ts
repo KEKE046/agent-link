@@ -117,7 +117,7 @@ app.get("/", async (c) => {
 });
 
 // Serve static files from src/public
-app.use("/*", serveStatic({ root: "./src/public" }));
+app.use("/*", serveStatic({ root: import.meta.dir + "/public/" }));
 
 export default {
   port: 3456,
