@@ -239,33 +239,44 @@
         <h3 class="text-sm font-semibold">Start VSCode Server</h3>
         <button @click="showVscodeModal = false" class="text-gray-500 hover:text-gray-300">x</button>
       </div>
-      <div class="p-4 space-y-3 text-sm">
-        <div class="text-gray-400">
-          cwd: <span class="mono text-gray-200" x-text="vscodeTargetCwd"></span>
-        </div>
+      <div class="px-4 pt-3 border-b border-gray-800 flex gap-2 text-xs">
+        <button @click="vscodeTab = 'start'"
+                :class="vscodeTab === 'start' ? 'bg-gray-700 text-gray-100' : 'bg-gray-800 text-gray-400 hover:text-gray-200'"
+                class="px-3 py-1.5 rounded-t">启动</button>
+        <button @click="vscodeTab = 'install'"
+                :class="vscodeTab === 'install' ? 'bg-gray-700 text-gray-100' : 'bg-gray-800 text-gray-400 hover:text-gray-200'"
+                class="px-3 py-1.5 rounded-t">安装</button>
+      </div>
+      <div class="p-4 space-y-3 text-sm overflow-y-auto">
+        <div class="text-gray-400">cwd: <span class="mono text-gray-200" x-text="vscodeTargetCwd"></span></div>
         <div x-show="vscodeLoading" class="text-gray-500">Loading...</div>
-        <template x-if="!vscodeLoading && vscodeVersions.length > 0">
-          <div class="space-y-3">
-            <label class="text-xs text-gray-400 block">Version</label>
-            <select x-model="vscodeSelectedCommit" aria-label="Select VSCode server version" class="w-full bg-gray-800 text-gray-300 rounded px-2 py-2 text-sm outline-none">
-              <template x-for="v in vscodeVersions" :key="v.commit">
-                <option :value="v.commit" x-text="`${v.version} (${v.commit.slice(0, 12)})`"></option>
-              </template>
-            </select>
-            <button @click="startVscode()"
-                    :disabled="!vscodeSelectedCommit"
-                    aria-label="Start VSCode server and open in new window"
-                    class="w-full px-3 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 rounded text-sm">Start and Open</button>
-          </div>
-        </template>
-        <template x-if="!vscodeLoading && vscodeVersions.length === 0">
-          <div class="space-y-3">
-            <div class="text-yellow-400">No installed VSCode server found.</div>
-            <div class="text-xs text-gray-400 whitespace-pre-wrap" x-text="vscodeInstall?.prompt || ''"></div>
-            <label class="text-xs text-gray-400 block">Install command template</label>
-            <textarea readonly aria-label="Installation command" class="w-full h-28 bg-gray-800 border border-gray-700 rounded p-2 text-xs mono text-gray-300" x-text="vscodeInstall?.command || ''"></textarea>
-          </div>
-        </template>
+        <div x-show="vscodeTab === 'start'" class="space-y-3">
+          <label class="text-xs text-gray-400 block">Version</label>
+          <select x-model="vscodeSelectedCommit" aria-label="Select VSCode server version"
+                  :disabled="vscodeVersions.length === 0"
+                  class="w-full bg-gray-800 text-gray-300 rounded px-2 py-2 text-sm outline-none disabled:opacity-60">
+            <template x-for="v in vscodeVersions" :key="v.commit">
+              <option :value="v.commit" x-text="`${v.version} (${v.commit.slice(0, 12)})`"></option>
+            </template>
+          </select>
+          <div x-show="vscodeVersions.length === 0" class="text-yellow-400 text-xs">请先在「安装」页安装</div>
+          <button @click="startVscode()"
+                  :disabled="!vscodeSelectedCommit || vscodeVersions.length === 0 || vscodeLoading"
+                  aria-label="Start VSCode server and open in new window"
+                  class="w-full px-3 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 rounded text-sm">Start and Open</button>
+        </div>
+        <div x-show="vscodeTab === 'install'" class="space-y-3">
+          <label class="text-xs text-gray-400 block">VS Code version</label>
+          <input x-model="vscodeInstallVersion" @input.debounce.400ms="fetchInstallInfo()"
+                 placeholder="1.112.0"
+                 class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm mono outline-none" />
+          <label class="text-xs text-gray-400 block">Prompt (copy to Agent Link session)</label>
+          <textarea readonly class="w-full h-24 bg-gray-800 border border-gray-700 rounded p-2 text-xs mono text-gray-300" x-text="vscodeInstall?.prompt || ''"></textarea>
+          <label class="text-xs text-gray-400 block">Install script</label>
+          <textarea readonly class="w-full h-40 bg-gray-800 border border-gray-700 rounded p-2 text-xs mono text-gray-300" x-text="vscodeInstall?.script || ''"></textarea>
+          <label class="text-xs text-gray-400 block">Install command</label>
+          <textarea readonly aria-label="Installation command" class="w-full h-20 bg-gray-800 border border-gray-700 rounded p-2 text-xs mono text-gray-300" x-text="vscodeInstall?.command || ''"></textarea>
+        </div>
       </div>
     </div>
   </div>
@@ -307,7 +318,9 @@ function app() {
     vscodeActive: {},
     showVscodeModal: false,
     vscodeTargetCwd: '',
+    vscodeTab: 'start',
     vscodeSelectedCommit: '',
+    vscodeInstallVersion: '1.112.0',
     vscodeInstall: null,
     vscodeLoading: false,
 
@@ -422,16 +435,16 @@ function app() {
         return;
       }
       this.vscodeTargetCwd = cwd;
+      this.vscodeTab = 'start';
       this.vscodeSelectedCommit = '';
       this.vscodeLoading = true;
       this.showVscodeModal = true;
       try {
-        const [versionsRes, installRes] = await Promise.all([
+        const [versionsRes] = await Promise.all([
           fetch('/api/vscode/versions'),
-          fetch('/api/vscode/install-command'),
         ]);
         this.vscodeVersions = await versionsRes.json();
-        this.vscodeInstall = await installRes.json();
+        await this.fetchInstallInfo();
         if (this.vscodeVersions.length > 0) {
           this.vscodeSelectedCommit = this.vscodeVersions[0].commit;
         }
@@ -441,8 +454,24 @@ function app() {
       this.vscodeLoading = false;
     },
 
+    async fetchInstallInfo() {
+      try {
+        const version = this.vscodeInstallVersion || '1.112.0';
+        const res = await fetch(`/api/vscode/install-command?version=${encodeURIComponent(version)}`);
+        this.vscodeInstall = await res.json();
+      } catch {
+        this.vscodeInstall = null;
+      }
+    },
+
     async startVscode() {
       if (!this.vscodeTargetCwd || !this.vscodeSelectedCommit) return;
+      // Open synchronously on user click to avoid popup blockers; navigate after async start completes.
+      const tab = window.open('about:blank', '_blank', 'noopener');
+      if (!tab) {
+        alert('Popup blocked. Please allow popups and retry.');
+        return;
+      }
       this.vscodeLoading = true;
       try {
         const res = await fetch('/api/vscode/start', {
@@ -454,8 +483,9 @@ function app() {
         if (data.error) throw new Error(data.error);
         this.showVscodeModal = false;
         await this.refreshVscodeActive();
-        window.open(this.vscodeUrl(this.vscodeTargetCwd), '_blank', 'noopener');
+        tab.location.href = this.vscodeUrl(this.vscodeTargetCwd);
       } catch (err) {
+        tab.close();
         alert(err?.message || 'Failed to start VSCode server');
       }
       this.vscodeLoading = false;
