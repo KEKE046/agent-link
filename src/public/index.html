@@ -11,6 +11,14 @@
   <style>
     [x-cloak] { display: none !important; }
     .mono { font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace; }
+    :root {
+      --assistant-message-color: #e5e7eb;
+      --assistant-message-bg: rgba(31, 41, 55, 0.2);
+      --user-message-color: #22c55e;
+      --user-prefix-color: rgba(34, 197, 94, 0.7);
+      --user-summary-color: #86efac;
+      --user-summary-hover-bg: rgba(34, 197, 94, 0.08);
+    }
     ::-webkit-scrollbar { width: 6px; height: 0; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
@@ -43,6 +51,79 @@
     /* Prevent horizontal overflow */
     .tool-line { overflow-wrap: anywhere; }
     .tool-item { overflow: hidden; }
+    .process-summary { color: #6b7280; }
+    .process-body { margin-left: 0.25rem; border-left: 1px solid rgba(55, 65, 81, 0.4); padding-left: 0.5rem; }
+    .tool-kind { color: #f59e0b; }
+    .tool-kind-bash { color: #eab308; }
+    .tool-kind-read { color: #60a5fa; }
+    .tool-kind-write { color: #34d399; }
+    .tool-kind-edit { color: #fb923c; }
+    .tool-kind-search { color: #a78bfa; }
+    .tool-kind-web { color: #38bdf8; }
+    .tool-kind-agent { color: #818cf8; }
+    .tool-kind-default { color: #fbbf24; }
+    .tool-text { color: #d1d5db; }
+    .tool-path { color: #9ca3af; }
+    .tool-meta { color: #6b7280; }
+    .tool-output { color: #6b7280; }
+    .tool-group-summary { color: rgba(250, 204, 21, 0.7); }
+    .message-row { max-width: 100%; }
+    .message-content { width: 100%; padding: 0.35rem 0.15rem; border: 0; border-radius: 0; }
+    .assistant-message { color: var(--assistant-message-color); background: var(--assistant-message-bg); }
+    .user-message-content { color: var(--user-message-color); white-space: pre-wrap; overflow-wrap: anywhere; }
+    .user-message-details > summary { list-style: none; color: var(--user-summary-color); cursor: pointer; user-select: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0.2rem 0.15rem; }
+    .user-message-details > summary::-webkit-details-marker { display: none; }
+    .user-message-details > summary::before { content: '▸ '; font-size: 0.75em; color: #4b5563; }
+    .user-message-details[open] > summary::before { content: '▾ '; }
+    .user-message-details > summary:hover { background: var(--user-summary-hover-bg); }
+    .user-message-details > summary:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; border-radius: 0.2rem; }
+    .message-prefix { color: var(--user-prefix-color); }
+    .task-note { margin: 0.35rem 0; border: 1px solid rgba(148, 163, 184, 0.5); border-radius: 0.375rem; padding: 0.35rem 0.5rem; font-size: 0.8em; background: rgba(15, 23, 42, 0.5); }
+    .task-note-tag { display: inline-block; margin-right: 0.45rem; color: #f59e0b; font-weight: 600; }
+    .task-note-summary { color: #cbd5e1; }
+    body.light-theme { background: #f3f4f6; color: #111827; }
+    body.light-theme .md-content pre { background: #e5e7eb; color: #111827; }
+    body.light-theme .md-content :not(pre) > code { background: #e5e7eb; color: #111827; }
+    body.light-theme .md-content th, body.light-theme .md-content td { border-color: #d1d5db; }
+    body.light-theme .md-content th { background: #e5e7eb; }
+    body.light-theme .md-content blockquote { border-left-color: #9ca3af; color: #4b5563; }
+    body.light-theme .md-content hr { border-color: #d1d5db; }
+    body.light-theme .md-content a { color: #1d4ed8; }
+    body.light-theme .process-summary, body.light-theme .tool-meta, body.light-theme .tool-output { color: #4b5563; }
+    body.light-theme .tool-kind { color: #92400e; }
+    body.light-theme .tool-kind-bash { color: #92400e; }
+    body.light-theme .tool-kind-read { color: #1d4ed8; }
+    body.light-theme .tool-kind-write { color: #047857; }
+    body.light-theme .tool-kind-edit { color: #c2410c; }
+    body.light-theme .tool-kind-search { color: #6d28d9; }
+    body.light-theme .tool-kind-web { color: #0369a1; }
+    body.light-theme .tool-kind-agent { color: #4338ca; }
+    body.light-theme .tool-kind-default { color: #a16207; }
+    body.light-theme .tool-text { color: #111827; }
+    body.light-theme .tool-path { color: #374151; }
+    body.light-theme .tool-group-summary { color: #854d0e; }
+    body.light-theme {
+      --assistant-message-color: #111827;
+      --assistant-message-bg: rgba(255, 255, 255, 0.9);
+      --user-message-color: #166534;
+      --user-prefix-color: #16a34a;
+      --user-summary-color: #15803d;
+      --user-summary-hover-bg: #dcfce7;
+    }
+    body.light-theme .task-note { background: #f8fafc; border-color: #cbd5e1; }
+    body.light-theme .task-note-summary { color: #334155; }
+    body.light-theme .process-body { border-left-color: rgba(156, 163, 175, 0.6); }
+    body.light-theme .tool-details > summary::before { color: #6b7280; }
+    body.light-theme .border-gray-800, body.light-theme .border-gray-800\/50, body.light-theme .border-gray-800\/30 { border-color: #d1d5db !important; }
+    body.light-theme .bg-gray-950, body.light-theme .bg-gray-900, body.light-theme .bg-gray-900\/50, body.light-theme .bg-gray-900\/30, body.light-theme .bg-gray-800, body.light-theme .bg-gray-800\/50, body.light-theme .bg-gray-700 { background-color: #ffffff !important; }
+    body.light-theme .hover\:bg-gray-800:hover, body.light-theme .hover\:bg-gray-800\/50:hover, body.light-theme .hover\:bg-gray-700:hover, body.light-theme .hover\:bg-gray-600:hover { background-color: #f3f4f6 !important; }
+    body.light-theme .text-gray-100, body.light-theme .text-gray-300, body.light-theme .text-gray-200, body.light-theme .text-gray-400 { color: #111827 !important; }
+    body.light-theme .text-gray-500, body.light-theme .text-gray-600 { color: #4b5563 !important; }
+    body.light-theme .bg-blue-600 { background-color: #2563eb !important; }
+    body.light-theme .hover\:bg-blue-500:hover { background-color: #1d4ed8 !important; }
+    body.light-theme .bg-red-700 { background-color: #dc2626 !important; }
+    body.light-theme .hover\:bg-red-600:hover { background-color: #b91c1c !important; }
+    body.light-theme .bg-black\/60 { background-color: rgba(17, 24, 39, 0.35) !important; }
   </style>
 </head>
 <body class="bg-gray-950 text-gray-100 h-screen overflow-hidden">
@@ -198,6 +279,10 @@
                  class="bg-gray-800 text-gray-300 rounded px-2 py-1 text-xs outline-none w-28" />
         </div>
       </template>
+      <button @click="toggleTheme()"
+              class="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-xs flex-shrink-0"
+              :title="theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'"
+              x-text="theme === 'light' ? '☀' : '☾'"></button>
       <span class="text-gray-500">cwd:</span>
       <input x-model="cwd" class="bg-transparent text-gray-300 flex-1 outline-none text-sm mono min-w-0" />
       <select x-model="model" class="bg-gray-800 text-gray-300 rounded px-2 py-1 text-xs outline-none">
@@ -218,7 +303,7 @@
       <template x-for="(block, i) in streaming.blocks" :key="'sb'+i">
         <div>
           <template x-if="block.type === 'text'">
-            <div class="text-gray-200 md-content" x-html="R.renderMd(block.text)"></div>
+            <div class="message-row message-assistant py-1"><div class="message-content assistant-message md-content" x-html="R.renderMd(block.text)"></div></div>
           </template>
           <template x-if="block.type === 'tool_use'">
             <div class="tool-line text-xs py-0.5" x-html="R.renderToolUse(block.name, block.input)"></div>
@@ -228,13 +313,13 @@
 
       <!-- Active tool being streamed -->
       <div x-show="streaming._toolName" class="text-xs py-0.5">
-        <span class="text-yellow-500/80 font-semibold" x-text="streaming._toolName"></span>
-        <span class="text-gray-600 animate-pulse">...</span>
+        <span class="tool-kind font-semibold" x-text="streaming._toolName"></span>
+        <span class="tool-meta animate-pulse">...</span>
       </div>
 
       <!-- Streaming text (live typing) -->
-      <div x-show="streaming.text" class="text-gray-200 md-content">
-        <span x-html="R.renderMd(streaming.text)"></span><span class="cursor-blink text-gray-500">|</span>
+      <div x-show="streaming.text" class="message-row message-assistant py-1">
+        <div class="message-content assistant-message md-content"><span x-html="R.renderMd(streaming.text)"></span><span class="cursor-blink tool-meta">|</span></div>
       </div>
 
       <!-- Thinking indicator -->
@@ -410,6 +495,7 @@ function app() {
       const storedCollapsed = localStorage.getItem('agent-link:sidebar-collapsed');
       return storedCollapsed !== null ? storedCollapsed === 'true' : !window.matchMedia('(min-width: 768px)').matches;
     })(),
+    theme: localStorage.getItem('agent-link:theme') === 'light' ? 'light' : 'dark',
 
     showLoadModal: false,
     browseSessions: [],
@@ -441,6 +527,7 @@ function app() {
     init() {
       Alpine.store('active', false);
       if (!this.cwd) this.cwd = window.location.hostname === 'localhost' ? '.' : '/';
+      this.applyTheme();
       this.detectPanelMode().then(() => this.loadManaged());
       this.refreshActive();
       this.refreshVscodeActive();
@@ -450,6 +537,19 @@ function app() {
       this.$watch('sidebarCollapsed', (v) => localStorage.setItem('agent-link:sidebar-collapsed', String(v)));
       this.$watch('sidebarWidth', (v) => localStorage.setItem('agent-link:sidebar-width', String(this.clampWidth(v))));
       this.$watch('selectedNodeId', (v) => localStorage.setItem('agent-link:nodeId', v));
+      this.$watch('theme', (v) => {
+        localStorage.setItem('agent-link:theme', v);
+        this.applyTheme();
+      });
+    },
+
+    applyTheme() {
+      if (this.theme === 'light') document.body.classList.add('light-theme');
+      else document.body.classList.remove('light-theme');
+    },
+
+    toggleTheme() {
+      this.theme = this.theme === 'light' ? 'dark' : 'light';
     },
 
     async detectPanelMode() {
