@@ -1,10 +1,12 @@
 {
   "name": "agent-link",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "type": "module",
   "scripts": {
-    "dev": "bunx @tailwindcss/cli -i src/public/tailwind.input.css -o src/public/styles.css --watch & bun --watch src/server.ts",
-    "build:css": "bunx @tailwindcss/cli -i src/public/tailwind.input.css -o src/public/styles.css --minify"
+    "dev": "NODE_ENV=development bunx @tailwindcss/cli -i src/public/tailwind.input.css -o src/public/styles.css --watch & NODE_ENV=development bun --watch src/server.ts",
+    "build:css": "bunx @tailwindcss/cli -i src/public/tailwind.input.css -o src/public/styles.css --minify",
+    "build": "bun run build:css && bun build src/server.ts --outdir dist --target bun",
+    "build:binary": "bun run build:css && bun build src/server.ts --compile --outfile dist/agent-link"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "latest",

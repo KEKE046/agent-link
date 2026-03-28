@@ -1,9 +1,19 @@
 import { Hono } from "hono";
-import { serveStatic } from "hono/bun";
 import { streamSSE } from "hono/streaming";
 import * as sessions from "./sessions";
+import indexHtml from "./public/index.html" with { type: "text" };
+import rendererJs from "./public/renderer.js" with { type: "text" };
+import stylesCss from "./public/styles.css" with { type: "text" };
 
 const app = new Hono();
+const isDev = Bun.env.NODE_ENV === "development";
+
+async function readAsset(path: string, embedded: string): Promise<string> {
+  if (!isDev) return embedded;
+  const file = Bun.file(import.meta.dir + path);
+  if (!(await file.exists())) return embedded;
+  return file.text();
+}
 
 // API: Start new query or resume existing session
 app.post("/api/query", async (c) => {
@@ -110,14 +120,23 @@ app.get("/api/active", (c) => {
   return c.json(sessions.getActiveIds());
 });
 
-// Serve index.html
-app.get("/", async (c) => {
-  const file = Bun.file(import.meta.dir + "/public/index.html");
-  return c.html(await file.text());
+// Serve static assets
+app.get("/renderer.js", async (c) => {
+  return new Response(await readAsset("/public/renderer.js", rendererJs), {
+    headers: { "Content-Type": "application/javascript" },
+  });
 });
 
-// Serve static files from src/public
-app.use("/*", serveStatic({ root: import.meta.dir + "/public/" }));
+app.get("/styles.css", async (c) => {
+  return new Response(await readAsset("/public/styles.css", stylesCss), {
+    headers: { "Content-Type": "text/css; charset=utf-8" },
+  });
+});
+
+// Serve index.html
+app.get("/", async (c) => {
+  return c.html(await readAsset("/public/index.html", indexHtml));
+});
 
 export default {
   port: 3456,
