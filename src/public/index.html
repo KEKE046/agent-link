@@ -64,6 +64,13 @@
                class="px-3 py-2 flex items-center gap-1.5 cursor-pointer hover:bg-gray-800/50 text-xs text-gray-400 sticky top-0 bg-gray-900 border-b border-gray-800/50">
             <span x-text="expandedGroups.has(g.cwd) ? '▾' : '▸'" class="text-gray-600 w-3"></span>
             <span class="truncate flex-1 font-medium" x-text="g.cwd"></span>
+            <button
+              @click.stop="openVscode(g.cwd)"
+              @contextmenu.prevent.stop="stopVscode(g.cwd)"
+              aria-label="Open or start VSCode server"
+              :title="isVscodeActive(g.cwd) ? 'Open VSCode (right-click to stop)' : 'Start VSCode'"
+              class="px-1.5 py-0.5 rounded hover:bg-gray-700 text-[11px]"
+              :class="isVscodeActive(g.cwd) ? 'text-blue-300' : 'text-gray-500 hover:text-gray-300'">VS</button>
             <span class="text-gray-600" x-text="g.sessions.length"></span>
           </div>
           <template x-if="expandedGroups.has(g.cwd)">
@@ -222,6 +229,44 @@
       </div>
     </div>
   </div>
+
+  <!-- VSCode Modal -->
+  <div x-show="showVscodeModal" x-cloak
+       class="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+       @click.self="showVscodeModal = false">
+    <div class="bg-gray-900 border border-gray-700 rounded-lg w-[560px] max-h-[70vh] flex flex-col">
+      <div class="p-4 border-b border-gray-800 flex justify-between items-center">
+        <h3 class="text-sm font-semibold">Start VSCode Server</h3>
+        <button @click="showVscodeModal = false" class="text-gray-500 hover:text-gray-300">x</button>
+      </div>
+      <div class="p-4 space-y-3 text-sm">
+        <div class="text-gray-400">
+          cwd: <span class="mono text-gray-200" x-text="vscodeTargetCwd"></span>
+        </div>
+        <div x-show="vscodeLoading" class="text-gray-500">Loading...</div>
+        <template x-if="!vscodeLoading && vscodeVersions.length > 0">
+          <div class="space-y-3">
+            <select x-model="vscodeSelectedCommit" aria-label="Select VSCode server version" class="w-full bg-gray-800 text-gray-300 rounded px-2 py-2 text-sm outline-none">
+              <template x-for="v in vscodeVersions" :key="v.commit">
+                <option :value="v.commit" x-text="`${v.version} (${v.commit.slice(0, 12)})`"></option>
+              </template>
+            </select>
+            <button @click="startVscode()"
+                    :disabled="!vscodeSelectedCommit"
+                    aria-label="Start VSCode server and open in new window"
+                    class="w-full px-3 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 rounded text-sm">Start and Open</button>
+          </div>
+        </template>
+        <template x-if="!vscodeLoading && vscodeVersions.length === 0">
+          <div class="space-y-3">
+            <div class="text-yellow-400">No installed VSCode server found.</div>
+            <div class="text-xs text-gray-400 whitespace-pre-wrap" x-text="vscodeInstall?.prompt || ''"></div>
+            <textarea readonly aria-label="Installation command" class="w-full h-28 bg-gray-800 border border-gray-700 rounded p-2 text-xs mono text-gray-300" x-text="vscodeInstall?.command || ''"></textarea>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -256,12 +301,21 @@ function app() {
     browseOffset: 0,
     browseExpanded: new Set(),
     browseHasMore: false,
+    vscodeVersions: [],
+    vscodeActive: {},
+    showVscodeModal: false,
+    vscodeTargetCwd: '',
+    vscodeSelectedCommit: '',
+    vscodeInstall: null,
+    vscodeLoading: false,
 
     init() {
       Alpine.store('active', false);
       if (!this.cwd) this.cwd = window.location.hostname === 'localhost' ? '.' : '/';
       this.refreshActive();
+      this.refreshVscodeActive();
       setInterval(() => this.refreshActive(), 5000);
+      setInterval(() => this.refreshVscodeActive(), 5000);
       this.$watch('cwd', (v) => localStorage.setItem('agent-link:cwd', v));
       this.$watch('model', (v) => localStorage.setItem('agent-link:model', v));
       this.$watch('sidebarCollapsed', (v) => localStorage.setItem('agent-link:sidebar-collapsed', String(v)));
@@ -341,6 +395,82 @@ function app() {
         this.activeSet = new Set(await res.json());
         this.syncActive();
       } catch {}
+    },
+
+    isVscodeActive(cwd) {
+      return !!this.vscodeActive[cwd];
+    },
+
+    vscodeUrl(cwd) {
+      return `/vscode/${encodeURIComponent(cwd)}/`;
+    },
+
+    async refreshVscodeActive() {
+      try {
+        const res = await fetch('/api/vscode/active');
+        const list = await res.json();
+        const map = {};
+        for (const item of list || []) map[item.cwd] = item;
+        this.vscodeActive = map;
+      } catch {}
+    },
+
+    async openVscode(cwd) {
+      if (this.isVscodeActive(cwd)) {
+        window.open(this.vscodeUrl(cwd), '_blank', 'noopener');
+        return;
+      }
+      this.vscodeTargetCwd = cwd;
+      this.vscodeSelectedCommit = '';
+      this.vscodeLoading = true;
+      this.showVscodeModal = true;
+      try {
+        const [versionsRes, installRes] = await Promise.all([
+          fetch('/api/vscode/versions'),
+          fetch('/api/vscode/install-command'),
+        ]);
+        this.vscodeVersions = await versionsRes.json();
+        this.vscodeInstall = await installRes.json();
+        if (this.vscodeVersions.length > 0) {
+          this.vscodeSelectedCommit = this.vscodeVersions[0].commit;
+        }
+      } catch {
+        this.vscodeVersions = [];
+      }
+      this.vscodeLoading = false;
+    },
+
+    async startVscode() {
+      if (!this.vscodeTargetCwd || !this.vscodeSelectedCommit) return;
+      this.vscodeLoading = true;
+      try {
+        const res = await fetch('/api/vscode/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cwd: this.vscodeTargetCwd, commit: this.vscodeSelectedCommit }),
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        this.showVscodeModal = false;
+        await this.refreshVscodeActive();
+        window.open(this.vscodeUrl(this.vscodeTargetCwd), '_blank', 'noopener');
+      } catch (err) {
+        alert(err?.message || 'Failed to start VSCode server');
+      }
+      this.vscodeLoading = false;
+    },
+
+    async stopVscode(cwd) {
+      if (!this.isVscodeActive(cwd)) return;
+      if (!confirm(`Stop VSCode server for ${cwd}?`)) return;
+      try {
+        await fetch('/api/vscode/stop', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cwd }),
+        });
+      } catch {}
+      this.refreshVscodeActive();
     },
 
     saveManaged() {
