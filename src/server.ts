@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { serveStatic } from "hono/bun";
 import { streamSSE } from "hono/streaming";
 import * as sessions from "./sessions";
 
@@ -109,20 +110,8 @@ app.get("/api/active", (c) => {
   return c.json(sessions.getActiveIds());
 });
 
-// Serve static assets
-app.get("/renderer.js", async (c) => {
-  const file = Bun.file(import.meta.dir + "/public/renderer.js");
-  return new Response(await file.arrayBuffer(), {
-    headers: { "Content-Type": "application/javascript" },
-  });
-});
-
-app.get("/styles.css", async (c) => {
-  const file = Bun.file(import.meta.dir + "/public/styles.css");
-  return new Response(await file.arrayBuffer(), {
-    headers: { "Content-Type": "text/css; charset=utf-8" },
-  });
-});
+// Serve static files from src/public
+app.use("/*", serveStatic({ root: "./src/public" }));
 
 // Serve index.html
 app.get("/", async (c) => {

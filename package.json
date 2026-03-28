@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "bun --watch src/server.ts",
+    "dev": "bun run dev:css & bun --watch src/server.ts",
+    "dev:css": "bunx @tailwindcss/cli -i src/public/tailwind.input.css -o src/public/styles.css --watch",
     "build:css": "bunx @tailwindcss/cli -i src/public/tailwind.input.css -o src/public/styles.css --minify"
   },
   "dependencies": {
