@@ -1,3 +1,4 @@
 node_modules
 .playwright*
 src/public/styles.css
+MEMORY.md
