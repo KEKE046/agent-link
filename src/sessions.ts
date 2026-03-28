@@ -1,10 +1,4 @@
-import {
-  query as sdkQuery,
-  listSessions as sdkListSessions,
-  getSessionInfo as sdkGetSessionInfo,
-  getSessionMessages as sdkGetSessionMessages,
-  type Query,
-} from "@anthropic-ai/claude-agent-sdk";
+import { getClaudeSdk, type Query } from "./claude-sdk";
 
 type Listener = (msg: any) => void;
 
@@ -63,7 +57,7 @@ export async function startQuery(
     buffers.set(opts.sessionId, []); // clear buffer for new query
   }
 
-  const q = sdkQuery({ prompt, options: queryOpts });
+  const q = getClaudeSdk().query({ prompt, options: queryOpts });
   let resolvedId = opts.sessionId || "";
 
   if (opts.sessionId) {
@@ -145,11 +139,11 @@ export function isActive(sessionId: string): boolean {
 }
 
 export async function listSessions(cwd?: string, limit = 50, offset = 0) {
-  return sdkListSessions({ dir: cwd, limit, offset });
+  return getClaudeSdk().listSessions({ dir: cwd, limit, offset });
 }
 
 export async function getSessionInfo(sessionId: string, cwd?: string) {
-  return sdkGetSessionInfo(sessionId, { dir: cwd });
+  return getClaudeSdk().getSessionInfo(sessionId, { dir: cwd });
 }
 
 export async function getSessionMessages(
@@ -158,5 +152,5 @@ export async function getSessionMessages(
   limit = 200,
   offset = 0
 ) {
-  return sdkGetSessionMessages(sessionId, { dir: cwd, limit, offset });
+  return getClaudeSdk().getSessionMessages(sessionId, { dir: cwd, limit, offset });
 }
