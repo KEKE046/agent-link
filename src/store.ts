@@ -1,8 +1,8 @@
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 
-const cache = new Map<string, unknown>();
+const cache = new Map<string, { value: unknown; mtimeMs: number }>();
 
 function storeDir() {
   return Bun.env.AGENT_LINK_HOME || join(homedir(), ".agent-link");
@@ -18,12 +18,21 @@ function filePath(name: string) {
 
 export function load<T>(name: string, fallback: T): T {
   const path = filePath(name);
-  if (cache.has(path)) return cache.get(path) as T;
+  let mtimeMs = 0;
+  try {
+    mtimeMs = statSync(path).mtimeMs;
+  } catch {}
+  const cached = cache.get(path);
+  if (cached && cached.mtimeMs === mtimeMs) {
+    // NOTE: load returns the same object reference kept in cache.
+    // Callers that mutate the returned object will also mutate the cache.
+    return cached.value as T;
+  }
   let value = fallback;
   try {
     value = JSON.parse(readFileSync(path, "utf8"));
   } catch {}
-  cache.set(path, value);
+  cache.set(path, { value, mtimeMs });
   return value;
 }
 
@@ -34,5 +43,9 @@ export function save<T>(name: string, data: T): void {
   const content = JSON.stringify(data, null, 2);
   writeFileSync(tmp, content, "utf8");
   renameSync(tmp, path);
-  cache.set(path, data);
+  let mtimeMs = 0;
+  try {
+    mtimeMs = statSync(path).mtimeMs;
+  } catch {}
+  cache.set(path, { value: data, mtimeMs });
 }

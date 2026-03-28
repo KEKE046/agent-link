@@ -13,6 +13,6 @@ console.log(`[node] Starting Agent Link Node`);
 console.log(`[node] Panel: ${panelUrl}`);
 console.log(`[node] Label: ${Bun.env.NODE_LABEL || "(auto)"}`);
 const nodeKey = loadOrCreateNodeKey();
-console.log(`[node] Key: ${nodeKey}`);
+console.log(`[node] Key: ${nodeKey.slice(0, 4)}...`);
 
 connect(panelUrl, nodeKey);

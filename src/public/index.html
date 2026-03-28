@@ -519,7 +519,7 @@ function app() {
       const nodeMap = new Map();
       // Initialize from known nodes
       for (const n of this.nodes) {
-        nodeMap.set(n.nodeId, { nodeId: n.nodeId, label: n.label, cwdGroups: [] });
+        nodeMap.set(n.nodeId, { nodeId: n.nodeId, label: n.label, approved: n.approved, cwdGroups: [] });
       }
       // Group sessions
       const cwdMap = new Map(); // nodeId:cwd → sessions
@@ -532,7 +532,7 @@ function app() {
       // Assign cwd groups to nodes
       for (const [, group] of cwdMap) {
         if (!nodeMap.has(group.nodeId)) {
-          nodeMap.set(group.nodeId, { nodeId: group.nodeId, label: group.nodeId, cwdGroups: [] });
+          nodeMap.set(group.nodeId, { nodeId: group.nodeId, label: group.nodeId, approved: true, cwdGroups: [] });
         }
         nodeMap.get(group.nodeId).cwdGroups.push(group);
       }
@@ -847,8 +847,10 @@ function app() {
     async changeModel() {
       if (!this.currentId) return;
       const s = this.managed.find(s => s.sessionId === this.currentId);
-      if (s) s.model = this.model;
-      this.saveManagedItem(s);
+      if (s) {
+        s.model = this.model;
+        this.saveManagedItem(s);
+      }
       try {
         const headers = { 'Content-Type': 'application/json' };
         if (this.panelMode && s?.nodeId) headers['x-node-id'] = s.nodeId;

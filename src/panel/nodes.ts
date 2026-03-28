@@ -172,11 +172,6 @@ export function handleNodeMessage(nodeId: string, raw: string) {
     case "heartbeat":
       if (node) {
         node.lastHeartbeat = Date.now();
-        const record = nodeRecords[node.key];
-        if (record) {
-          record.lastSeen = node.lastHeartbeat;
-          persistNodeRecords();
-        }
         if (node.approved) {
           node.activeSessionIds = msg.activeSessionIds;
           node.vscodeServers = msg.vscodeServers;

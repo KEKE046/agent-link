@@ -31,13 +31,12 @@ PANEL_URL=http://localhost:3457 NODE_LABEL=my-node bun run dev:node
 ## Connection Flow
 
 1. Node starts with `PANEL_URL`; first start creates `~/.agent-link/node-key` (8 chars)
-3. Node connects WebSocket to `Panel/ws/node`
-4. Node sends `register { key, label }`
-5. Panel stores/reuses key record in `~/.agent-link/nodes.json`
-6. If node not approved, Panel replies `pending` and keeps WS connected
-7. Admin approves via `POST /api/nodes/:nodeId/approve`, Panel replies `registered { nodeId }`
-6. Node sends periodic `heartbeat { activeSessionIds, vscodeServers }` every 10s
-7. Panel pings every 30s to keep connection alive
+2. Node connects WebSocket to `Panel/ws/node`
+3. Node sends `register { key, label }`
+4. Panel stores/reuses key record in `~/.agent-link/nodes.json`
+5. If node not approved, Panel replies `pending` and keeps WS connected
+6. Admin approves via `POST /api/nodes/:nodeId/approve`, Panel replies `registered { nodeId }`
+7. Node sends periodic `heartbeat { activeSessionIds, vscodeServers }` every 10s; Panel pings every 30s to keep connection alive
 8. On disconnect, Node auto-reconnects with exponential backoff (1s -> 2s -> 4s -> ... -> 60s)
 
 ## WS Protocol
