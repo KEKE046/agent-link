@@ -5,6 +5,11 @@ document.addEventListener('alpine:init', () => {
   const _mdCache = new Map();
   const TASK_NOTE_BLOCK_RE = /(<div class="task-note">[\s\S]*?<\/div>)/g;
   const TASK_NOTE_BLOCK_MATCH_RE = /^<div class="task-note">[\s\S]*<\/div>$/;
+  const TASK_NOTIFICATION_RE = /<task-notification>[\s\S]*?<summary>([\s\S]*?)<\/summary>[\s\S]*?<\/task-notification>/g;
+  const USER_COLLAPSE_MAX_CHARS = 150;
+  const USER_COLLAPSE_MAX_LINES = 3;
+  const USER_SUMMARY_MAX_LENGTH = 100;
+  const TASK_NOTIFICATION_SUMMARY_PREFIX = 'task-notification: ';
 
   function esc(text) {
     if (!text) return '';
@@ -30,7 +35,7 @@ document.addEventListener('alpine:init', () => {
   function renderTaskNotifications(text) {
     if (!text || !text.includes('<task-notification>')) return text;
     if (text.length > 100_000) return text;
-    return text.replace(/<task-notification>[\s\S]*?<summary>([\s\S]*?)<\/summary>[\s\S]*?<\/task-notification>/g, (_, summary) => {
+    return text.replace(TASK_NOTIFICATION_RE, (_, summary) => {
       return `\n<div class="task-note"><span class="task-note-tag">task-notification</span><span class="task-note-summary">${esc(summary?.trim() || '')}</span></div>\n`;
     });
   }
@@ -60,11 +65,38 @@ document.addEventListener('alpine:init', () => {
     }
   }
 
-  function renderMessageText(text, role) {
-    if (role === 'user') {
-      return `<div class="message-row message-user py-1"><div class="message-bubble user-bubble"><span class="message-prefix">~ </span>${renderUserTextWithTaskNotifications(text)}</div></div>`;
+  function shouldCollapseUserMessage(text) {
+    if (!text) return false;
+    const str = String(text);
+    return str.length > USER_COLLAPSE_MAX_CHARS || str.split('\n').length > USER_COLLAPSE_MAX_LINES;
+  }
+
+  function userMessageSummary(text) {
+    if (!text) return '';
+    const replaced = String(text).replace(TASK_NOTIFICATION_RE, (_, summary) => {
+      const s = summary?.trim() || '';
+      return s ? `${TASK_NOTIFICATION_SUMMARY_PREFIX}${s}` : 'task-notification';
+    });
+    const first = replaced.split('\n')[0]?.trim() || '';
+    const clipped = first.length > USER_SUMMARY_MAX_LENGTH ? first.slice(0, USER_SUMMARY_MAX_LENGTH) + '...' : first;
+    return esc(clipped);
+  }
+
+  function renderUserMessage(text) {
+    const userText = renderUserTextWithTaskNotifications(text);
+    if (!shouldCollapseUserMessage(text)) {
+      return `<div class="message-row message-user py-1"><div class="user-message-content"><span class="message-prefix">~ </span>${userText}</div></div>`;
     }
-    return `<div class="message-row message-assistant py-1"><div class="message-bubble assistant-bubble md-content">${renderMd(renderTaskNotifications(text))}</div></div>`;
+    return `<div class="message-row message-user py-1">
+      <details class="user-message-details">
+        <summary class="user-message-summary"><span class="message-prefix">~ </span>${userMessageSummary(text)}</summary>
+        <div class="user-message-content">${userText}</div>
+      </details>
+    </div>`;
+  }
+
+  function renderAssistantMessage(text) {
+    return `<div class="message-row message-assistant py-1"><div class="message-content assistant-message md-content">${renderMd(renderTaskNotifications(text))}</div></div>`;
   }
 
   function renderProcessGroup(innerHtml, shouldOpen = false) {
@@ -206,7 +238,7 @@ document.addEventListener('alpine:init', () => {
         for (const block of msg.message.content) {
           if (block.type === 'text' && block.text?.trim()) {
             flushTools();
-            pendingProcess += renderMessageText(block.text, 'assistant');
+            pendingProcess += renderAssistantMessage(block.text);
           } else if (block.type === 'tool_use') {
             pendingTools.push({ block, result: resultMap.get(block.id) });
           }
@@ -218,11 +250,11 @@ document.addEventListener('alpine:init', () => {
         if (hasText) {
           flushProcess();
           if (typeof content === 'string') {
-            html += renderMessageText(content, 'user');
+            html += renderUserMessage(content);
           } else {
             let userHtml = '';
             for (const b of content) {
-              if (b.type === 'text') userHtml += renderMessageText(b.text, 'user');
+              if (b.type === 'text') userHtml += renderUserMessage(b.text);
             }
             if (userHtml) html += userHtml;
           }
@@ -252,14 +284,14 @@ document.addEventListener('alpine:init', () => {
       return `<div class="text-gray-600 text-xs py-1 border-b border-gray-800/50 mb-2">Session ${esc(msg.session_id?.slice(0, 8))} | model: ${esc(msg.model)} | cwd: ${esc(msg.cwd)} | tools: ${msg.tools?.length || 0}</div>`;
     }
     if (msg.type === 'user') {
-      const content = msg.message?.content;
-      if (typeof content === 'string') {
-        return renderMessageText(content, 'user');
+        const content = msg.message?.content;
+        if (typeof content === 'string') {
+        return renderUserMessage(content);
       }
       if (Array.isArray(content)) {
         let html = '';
         for (const b of content) {
-          if (b.type === 'text') html += renderMessageText(b.text, 'user');
+          if (b.type === 'text') html += renderUserMessage(b.text);
         }
         return html;
       }
@@ -317,13 +349,15 @@ document.addEventListener('alpine:init', () => {
 
       // Assistant with tools: merge into existing tool group or create new
       if (msg.type === 'assistant' && Array.isArray(msg.message?.content)) {
-        const process = this.ensureProcessContainer(true);
-        const processBody = process.querySelector(':scope > div');
         const textBlocks = msg.message.content.filter(b => b.type === 'text' && b.text?.trim());
         const toolBlocks = msg.message.content.filter(b => b.type === 'tool_use');
+        if (textBlocks.length === 0 && toolBlocks.length === 0) return;
+
+        const process = this.ensureProcessContainer(true);
+        const processBody = process.querySelector(':scope > div');
 
         for (const block of textBlocks) {
-          processBody.insertAdjacentHTML('beforeend', renderMessageText(block.text, 'assistant'));
+          processBody.insertAdjacentHTML('beforeend', renderAssistantMessage(block.text));
         }
 
         if (toolBlocks.length > 0) {
@@ -353,6 +387,7 @@ document.addEventListener('alpine:init', () => {
       }
 
       // Everything else: render normally
+      this.removeEmptyTrailingProcess();
       this.collapseProcessDetails();
       const html = renderSingleMsg(msg);
       if (html) this.$refs.rendered.insertAdjacentHTML('beforeend', html);
@@ -377,6 +412,14 @@ document.addEventListener('alpine:init', () => {
       this.$refs.rendered.querySelectorAll('.process-details[open]').forEach((details) => {
         details.open = false;
       });
+    },
+
+    removeEmptyTrailingProcess() {
+      const last = this.$refs.rendered.lastElementChild;
+      if (!last?.classList?.contains('process-details')) return;
+      const body = last.querySelector(':scope > .process-body');
+      if (!body) return;
+      if (body.children.length === 0 && !body.textContent?.trim()) last.remove();
     },
 
     insertToolResult(block) {

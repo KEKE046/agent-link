@@ -142,4 +142,30 @@ describe("renderer history rendering", () => {
     expect(rendered.innerHTML).toContain("message-assistant");
     expect(rendered.innerHTML).toContain('<details open class="process-details mt-0.5">');
   });
+
+  test("result is rendered outside process details", () => {
+    const { instance, rendered } = createMessagesInstance();
+
+    instance.loadHistory([
+      { type: "assistant", message: { content: [{ type: "text", text: "thinking..." }] } },
+      { type: "result", subtype: "success", total_cost_usd: 0.1, num_turns: 1, usage: { input_tokens: 1, output_tokens: 2 } },
+    ]);
+
+    const processClose = rendered.innerHTML.indexOf("</details>");
+    const resultPos = rendered.innerHTML.indexOf("success | cost:");
+    expect(processClose).toBeGreaterThan(-1);
+    expect(resultPos).toBeGreaterThan(processClose);
+  });
+
+  test("long user message is collapsed by default", () => {
+    const { instance, rendered } = createMessagesInstance();
+
+    instance.loadHistory([
+      { type: "user", message: { content: "line1\nline2\nline3\nline4" } },
+    ]);
+
+    expect(rendered.innerHTML).toContain('class="user-message-details"');
+    expect(rendered.innerHTML).toContain("user-message-summary");
+    expect(rendered.innerHTML).toContain("<summary");
+  });
 });
