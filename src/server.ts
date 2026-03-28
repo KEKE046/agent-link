@@ -3,8 +3,17 @@ import { streamSSE } from "hono/streaming";
 import * as sessions from "./sessions";
 import indexHtml from "./public/index.html" with { type: "text" };
 import rendererJs from "./public/renderer.js" with { type: "text" };
+import stylesCss from "./public/styles.css" with { type: "text" };
 
 const app = new Hono();
+const isDev = Bun.env.NODE_ENV === "development";
+
+async function readAsset(path: string, embedded: string): Promise<string> {
+  if (!isDev) return embedded;
+  const file = Bun.file(import.meta.dir + path);
+  if (!(await file.exists())) return embedded;
+  return file.text();
+}
 
 // API: Start new query or resume existing session
 app.post("/api/query", async (c) => {
@@ -112,15 +121,21 @@ app.get("/api/active", (c) => {
 });
 
 // Serve static assets
-app.get("/renderer.js", (c) => {
-  return new Response(rendererJs, {
+app.get("/renderer.js", async (c) => {
+  return new Response(await readAsset("/public/renderer.js", rendererJs), {
     headers: { "Content-Type": "application/javascript" },
   });
 });
 
+app.get("/styles.css", async () => {
+  return new Response(await readAsset("/public/styles.css", stylesCss), {
+    headers: { "Content-Type": "text/css; charset=utf-8" },
+  });
+});
+
 // Serve index.html
-app.get("/", (c) => {
-  return c.html(indexHtml);
+app.get("/", async (c) => {
+  return c.html(await readAsset("/public/index.html", indexHtml));
 });
 
 export default {
