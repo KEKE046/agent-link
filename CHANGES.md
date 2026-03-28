@@ -1,5 +1,17 @@
 # Agent Link - Changes
 
+## v0.7.0
+
+- Added Session Fork: fork a session into a new cwd with filesystem copy
+- New cwd uses suffix `.1`, `.2`, etc. (e.g., `/home/dev/project` → `/home/dev/project.1`)
+- JSONL session file copied with cwd paths rewritten and fork notice appended
+- Fork operations run in background with cancel/delete support
+- Added `src/fork.ts` — fork lifecycle management (nextCwd, startFork, cancelFork, deleteForkDir)
+- Added fork API routes: `POST /api/fork`, `GET /api/forks`, `GET /api/fork/:id`, cancel, delete
+- Fork forwarded through Panel → Node in distributed mode
+- Frontend: fork button (⑂) on sidebar sessions, fork progress indicator with cancel/delete controls
+- Session switching is now cwd-aware (supports same sessionId in different cwds)
+
 ## v0.6.0
 
 - Added Panel+Node distributed architecture: Panel (public) forwards all operations to Nodes (behind NAT) via WebSocket

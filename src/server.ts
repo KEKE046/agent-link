@@ -9,6 +9,13 @@ import {
   startVscodeServer,
   stopVscodeServer,
 } from "./vscode";
+import {
+  startFork,
+  getFork,
+  listForks,
+  cancelFork,
+  deleteForkDir,
+} from "./fork";
 import indexHtml from "./public/index.html" with { type: "text" };
 import rendererJs from "./public/renderer.js" with { type: "text" };
 import stylesCss from "./public/styles.css" with { type: "text" };
@@ -191,6 +198,35 @@ app.get("/api/vscode/active", (c) => {
 
 app.get("/api/vscode/install-command", (c) => {
   return c.json(getInstallCommand(c.req.query("version") || undefined));
+});
+
+// Fork APIs
+app.post("/api/fork", async (c) => {
+  const { sessionId, cwd } = await c.req.json();
+  if (!sessionId || !cwd) return c.json({ error: "sessionId and cwd required" }, 400);
+  try {
+    return c.json(await startFork(sessionId, cwd));
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+app.get("/api/forks", (c) => {
+  return c.json(listForks());
+});
+
+app.get("/api/fork/:id", (c) => {
+  const op = getFork(c.req.param("id"));
+  if (!op) return c.json({ error: "not found" }, 404);
+  return c.json(op);
+});
+
+app.post("/api/fork/:id/cancel", (c) => {
+  return c.json({ ok: cancelFork(c.req.param("id")) });
+});
+
+app.post("/api/fork/:id/delete", async (c) => {
+  return c.json({ ok: await deleteForkDir(c.req.param("id")) });
 });
 
 // Serve static assets

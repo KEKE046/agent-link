@@ -339,6 +339,91 @@ app.get("/api/vscode/install-command", async (c) => {
   }
 });
 
+// Fork APIs — forwarded to nodes
+app.post("/api/fork", async (c) => {
+  const body = await c.req.json();
+  const nodeId = body.nodeId || getNodeId(c);
+  if (!nodeId) return c.json({ error: "nodeId required" }, 400);
+  try {
+    return c.json(
+      await requestNode(nodeId, "startFork", {
+        sessionId: body.sessionId,
+        cwd: body.cwd,
+      })
+    );
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+app.get("/api/forks", async (c) => {
+  const nodeId = getNodeId(c);
+  if (nodeId) {
+    try {
+      return c.json(await requestNode(nodeId, "listForks", {}));
+    } catch (err: any) {
+      return c.json({ error: err.message }, 500);
+    }
+  }
+  // Aggregate from all online nodes
+  const results: any[] = [];
+  for (const node of listNodes()) {
+    if (!node.online) continue;
+    try {
+      const forks = await requestNode(node.nodeId, "listForks", {});
+      for (const f of forks || []) results.push({ ...f, nodeId: node.nodeId });
+    } catch {}
+  }
+  return c.json(results);
+});
+
+app.get("/api/fork/:id", async (c) => {
+  const forkId = c.req.param("id");
+  const nodeId = getNodeId(c);
+  if (nodeId) {
+    try {
+      return c.json(await requestNode(nodeId, "getFork", { forkId }));
+    } catch (err: any) {
+      return c.json({ error: err.message }, 500);
+    }
+  }
+  // Try all nodes
+  for (const node of listNodes()) {
+    if (!node.online) continue;
+    try {
+      const op = await requestNode(node.nodeId, "getFork", { forkId });
+      if (op) return c.json({ ...op, nodeId: node.nodeId });
+    } catch {}
+  }
+  return c.json({ error: "not found" }, 404);
+});
+
+app.post("/api/fork/:id/cancel", async (c) => {
+  const forkId = c.req.param("id");
+  const nodeId = getNodeId(c);
+  if (nodeId) {
+    try {
+      return c.json(await requestNode(nodeId, "cancelFork", { forkId }));
+    } catch (err: any) {
+      return c.json({ error: err.message }, 500);
+    }
+  }
+  return c.json({ error: "nodeId required" }, 400);
+});
+
+app.post("/api/fork/:id/delete", async (c) => {
+  const forkId = c.req.param("id");
+  const nodeId = getNodeId(c);
+  if (nodeId) {
+    try {
+      return c.json(await requestNode(nodeId, "deleteFork", { forkId }));
+    } catch (err: any) {
+      return c.json({ error: err.message }, 500);
+    }
+  }
+  return c.json({ error: "nodeId required" }, 400);
+});
+
 // Static assets
 app.get("/renderer.js", async (c) => {
   return new Response(await readAsset("/public/renderer.js", rendererJs), {

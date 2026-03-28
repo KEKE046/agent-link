@@ -7,6 +7,13 @@ import {
   listActiveServers,
   getInstallCommand,
 } from "../vscode";
+import {
+  startFork,
+  getFork,
+  listForks,
+  cancelFork,
+  deleteForkDir,
+} from "../fork";
 import { handleTunnelRequest, handleTunnelWsOpen, handleTunnelWsData, handleTunnelWsClose } from "./tunnel";
 
 let ws: WebSocket | null = null;
@@ -98,6 +105,26 @@ async function handleRequest(msg: { requestId: string; action: string; params: a
       }
       case "getInstallCommand": {
         data = getInstallCommand(msg.params.version);
+        break;
+      }
+      case "startFork": {
+        data = await startFork(msg.params.sessionId, msg.params.cwd);
+        break;
+      }
+      case "getFork": {
+        data = getFork(msg.params.forkId);
+        break;
+      }
+      case "listForks": {
+        data = listForks();
+        break;
+      }
+      case "cancelFork": {
+        data = { ok: cancelFork(msg.params.forkId) };
+        break;
+      }
+      case "deleteFork": {
+        data = { ok: await deleteForkDir(msg.params.forkId) };
         break;
       }
       default:

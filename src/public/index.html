@@ -95,8 +95,8 @@
                       <template x-if="expandedGroups.has(n.nodeId + ':' + g.cwd)">
                         <div>
                           <template x-for="s in g.sessions" :key="s.sessionId">
-                            <div @click="switchSession(s.sessionId)"
-                                 :class="currentId === s.sessionId ? 'bg-gray-800 border-l-2 border-blue-400' : 'border-l-2 border-transparent'"
+                            <div @click="switchSession(s.sessionId, s.cwd)"
+                                 :class="currentId === s.sessionId && currentCwd === s.cwd ? 'bg-gray-800 border-l-2 border-blue-400' : 'border-l-2 border-transparent'"
                                  class="pl-8 pr-3 py-2 cursor-pointer hover:bg-gray-800/50 relative group"
                                  :style="isNodeOnline(n.nodeId) ? '' : 'opacity: 0.5'">
                               <div class="flex items-center gap-2">
@@ -104,6 +104,8 @@
                                 <span x-show="!activeSet.has(s.sessionId)" class="w-2 h-2 rounded-full bg-gray-600 flex-shrink-0"></span>
                                 <span class="text-sm truncate" x-text="s.label || s.sessionId.slice(0, 8)"></span>
                               </div>
+                              <button @click.stop="forkSession(s)" title="Fork"
+                                      class="absolute right-8 top-1.5 text-gray-600 hover:text-blue-400 opacity-0 group-hover:opacity-100 text-xs">&#x2442;</button>
                               <button @click.stop="removeManaged(s.sessionId)"
                                       class="absolute right-2 top-1.5 text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 text-xs">x</button>
                             </div>
@@ -146,14 +148,16 @@
               <template x-if="expandedGroups.has(g.cwd)">
                 <div>
                   <template x-for="s in g.sessions" :key="s.sessionId">
-                    <div @click="switchSession(s.sessionId)"
-                         :class="currentId === s.sessionId ? 'bg-gray-800 border-l-2 border-blue-400' : 'border-l-2 border-transparent'"
+                    <div @click="switchSession(s.sessionId, s.cwd)"
+                         :class="currentId === s.sessionId && currentCwd === s.cwd ? 'bg-gray-800 border-l-2 border-blue-400' : 'border-l-2 border-transparent'"
                          class="pl-5 pr-3 py-2 cursor-pointer hover:bg-gray-800/50 relative group">
                       <div class="flex items-center gap-2">
                         <span x-show="activeSet.has(s.sessionId)" class="w-2 h-2 rounded-full bg-green-400 flex-shrink-0" :class="activeSet.has(s.sessionId) && 'animate-pulse'"></span>
                         <span x-show="!activeSet.has(s.sessionId)" class="w-2 h-2 rounded-full bg-gray-600 flex-shrink-0"></span>
                         <span class="text-sm truncate" x-text="s.label || s.sessionId.slice(0, 8)"></span>
                       </div>
+                      <button @click.stop="forkSession(s)" title="Fork"
+                              class="absolute right-8 top-1.5 text-gray-600 hover:text-blue-400 opacity-0 group-hover:opacity-100 text-xs">&#x2442;</button>
                       <button @click.stop="removeManaged(s.sessionId)"
                               class="absolute right-2 top-1.5 text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 text-xs">x</button>
                     </div>
@@ -164,7 +168,28 @@
           </template>
         </div>
       </template>
-      <div x-show="managed.length === 0" class="p-4 text-gray-600 text-sm text-center">No sessions</div>
+      <div x-show="managed.length === 0 && forkOps.length === 0" class="p-4 text-gray-600 text-sm text-center">No sessions</div>
+      <!-- Active fork operations -->
+      <template x-for="f in forkOps" :key="f.id">
+        <div class="px-3 py-2 border-b border-gray-800/30 text-xs">
+          <div class="flex items-center gap-2 text-gray-400">
+            <span x-show="f.status === 'copying' || f.status === 'rewriting'" class="w-2 h-2 rounded-full bg-yellow-400 animate-pulse flex-shrink-0"></span>
+            <span x-show="f.status === 'cancelled' || f.status === 'error'" class="w-2 h-2 rounded-full bg-red-400 flex-shrink-0"></span>
+            <span x-show="f.status === 'deleting'" class="w-2 h-2 rounded-full bg-orange-400 animate-pulse flex-shrink-0"></span>
+            <span class="truncate flex-1">
+              <span x-text="f.status === 'copying' ? 'Forking...' : f.status === 'rewriting' ? 'Rewriting...' : f.status === 'deleting' ? 'Deleting...' : f.status === 'cancelled' ? 'Cancelled' : 'Error'"></span>
+              <span class="text-gray-600 ml-1" x-text="f.newCwd.split('/').pop()"></span>
+            </span>
+            <button x-show="f.status === 'copying' || f.status === 'deleting'"
+                    @click.stop="cancelForkOp(f)" class="text-red-400 hover:text-red-300 px-1">cancel</button>
+            <button x-show="f.status === 'cancelled' || f.status === 'error'"
+                    @click.stop="deleteForkOp(f)" class="text-orange-400 hover:text-orange-300 px-1">delete</button>
+            <button x-show="f.status === 'cancelled' || f.status === 'error'"
+                    @click.stop="dismissForkOp(f)" class="text-gray-600 hover:text-gray-400 px-1">x</button>
+          </div>
+          <div x-show="f.error" class="text-red-400/70 mt-0.5 truncate" x-text="f.error"></div>
+        </div>
+      </template>
     </div>
   </div>
   <div x-show="!sidebarCollapsed" @mousedown.prevent="startResize($event)" @touchstart.prevent="startResize($event)"
@@ -370,6 +395,7 @@ function app() {
   return {
     managed: JSON.parse(localStorage.getItem('agent-link:managed') || '[]'),
     currentId: null,
+    currentCwd: null,
     inputText: '',
     cwd: localStorage.getItem('agent-link:cwd') || '',
     model: localStorage.getItem('agent-link:model') || 'claude-sonnet-4-6',
@@ -408,6 +434,8 @@ function app() {
     vscodeInstall: null,
     vscodeLoading: false,
     vscodeStartedUrl: '',
+    forkOps: [],
+    forkPollTimer: null,
 
     // Panel mode
     panelMode: false,
@@ -691,6 +719,7 @@ function app() {
 
     newSession() {
       this.currentId = null;
+      this.currentCwd = null;
       this.msg('clear');
       this.seenUuids = new Set();
       this.totalCost = 0;
@@ -721,6 +750,7 @@ function app() {
           if (data.error) { this.msg('append', { type: 'error', error: data.error }); return; }
 
           this.currentId = data.sessionId;
+          this.currentCwd = this.cwd;
           const entry = { sessionId: data.sessionId, cwd: this.cwd, model: this.model, label: prompt.slice(0, 40) };
           if (nodeId) entry.nodeId = nodeId;
           this.managed.unshift(entry);
@@ -744,7 +774,7 @@ function app() {
       this.inputText = '';
       this.msg('append', { type: 'user', message: { content: [{ type: 'text', text: prompt }] } });
 
-      const s = this.managed.find(s => s.sessionId === this.currentId);
+      const s = this.managed.find(s => s.sessionId === this.currentId && (!this.currentCwd || s.cwd === this.currentCwd));
       try {
         const body = { prompt, sessionId: this.currentId, cwd: s?.cwd || this.cwd, model: s?.model || this.model };
         if (s?.nodeId) body.nodeId = s.nodeId;
@@ -765,7 +795,7 @@ function app() {
 
     async interruptSession() {
       if (!this.currentId) return;
-      const s = this.managed.find(s => s.sessionId === this.currentId);
+      const s = this.managed.find(s => s.sessionId === this.currentId && (!this.currentCwd || s.cwd === this.currentCwd));
       const headers = {};
       if (this.panelMode && s?.nodeId) headers['x-node-id'] = s.nodeId;
       try { await fetch(`/api/interrupt/${this.currentId}`, { method: 'POST', headers }); } catch {}
@@ -773,7 +803,7 @@ function app() {
 
     async changeModel() {
       if (!this.currentId) return;
-      const s = this.managed.find(s => s.sessionId === this.currentId);
+      const s = this.managed.find(s => s.sessionId === this.currentId && (!this.currentCwd || s.cwd === this.currentCwd));
       if (s) s.model = this.model;
       this.saveManaged();
       try {
@@ -787,16 +817,17 @@ function app() {
       } catch {}
     },
 
-    async switchSession(id) {
-      if (this.currentId === id) return;
+    async switchSession(id, entryCwd) {
+      if (this.currentId === id && this.currentCwd === entryCwd) return;
       this.currentId = id;
+      this.currentCwd = entryCwd || null;
       this.msg('clear');
       this.seenUuids = new Set();
       this.totalCost = 0;
       this.totalIn = 0;
       this.totalOut = 0;
 
-      const s = this.managed.find(s => s.sessionId === id);
+      const s = this.managed.find(s => s.sessionId === id && (!entryCwd || s.cwd === entryCwd));
       if (s) {
         if (this.panelMode && s.nodeId) {
           this.expandGroup('node:' + s.nodeId);
@@ -919,7 +950,7 @@ function app() {
         }
       }
       this.showLoadModal = false;
-      this.switchSession(session.sessionId);
+      this.switchSession(session.sessionId, entry.cwd);
     },
 
     removeManaged(id) {
@@ -927,9 +958,104 @@ function app() {
       this.saveManaged();
       if (this.currentId === id) {
         this.currentId = null;
+        this.currentCwd = null;
         this.msg('clear');
         if (this.eventSource) this.eventSource.close();
       }
+    },
+
+    // Fork operations
+    async forkSession(entry) {
+      const body = { sessionId: entry.sessionId, cwd: entry.cwd };
+      if (entry.nodeId) body.nodeId = entry.nodeId;
+      try {
+        const res = await fetch('/api/fork', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const op = await res.json();
+        if (op.error) { alert(op.error); return; }
+        op.nodeId = entry.nodeId;
+        op.label = entry.label;
+        this.forkOps.push(op);
+        this.startForkPolling();
+      } catch (err) {
+        alert(err?.message || 'Fork failed');
+      }
+    },
+
+    startForkPolling() {
+      if (this.forkPollTimer) return;
+      this.forkPollTimer = setInterval(() => this.pollForks(), 1000);
+    },
+
+    stopForkPolling() {
+      if (this.forkPollTimer) { clearInterval(this.forkPollTimer); this.forkPollTimer = null; }
+    },
+
+    async pollForks() {
+      const active = this.forkOps.filter(f => f.status === 'copying' || f.status === 'rewriting' || f.status === 'deleting');
+      if (active.length === 0) { this.stopForkPolling(); return; }
+      for (const f of active) {
+        try {
+          const params = f.nodeId ? `?nodeId=${encodeURIComponent(f.nodeId)}` : '';
+          const res = await fetch(`/api/fork/${f.id}${params}`);
+          const updated = await res.json();
+          if (!updated || updated.error) continue;
+          const idx = this.forkOps.findIndex(x => x.id === f.id);
+          if (idx < 0) continue;
+          const prev = this.forkOps[idx];
+          this.forkOps[idx] = { ...this.forkOps[idx], ...updated };
+          // If just completed, add to managed and switch
+          if (updated.status === 'done' && prev.status !== 'done') {
+            const entry = {
+              sessionId: prev.sessionId,
+              cwd: prev.newCwd,
+              model: '',
+              label: (prev.label || prev.sessionId.slice(0, 8)) + ' (fork)',
+            };
+            if (prev.nodeId) entry.nodeId = prev.nodeId;
+            this.managed.unshift(entry);
+            this.saveManaged();
+            if (this.panelMode && prev.nodeId) {
+              this.expandGroup('node:' + prev.nodeId);
+              this.expandGroup(prev.nodeId + ':' + prev.newCwd);
+            } else {
+              this.expandGroup(prev.newCwd);
+            }
+            // Remove completed fork op after short delay
+            setTimeout(() => {
+              this.forkOps = this.forkOps.filter(x => x.id !== f.id);
+            }, 2000);
+            this.switchSession(prev.sessionId, prev.newCwd);
+          }
+          if (updated.status === 'deleted') {
+            this.forkOps = this.forkOps.filter(x => x.id !== f.id);
+          }
+        } catch {}
+      }
+    },
+
+    async cancelForkOp(f) {
+      try {
+        const params = f.nodeId ? `?nodeId=${encodeURIComponent(f.nodeId)}` : '';
+        await fetch(`/api/fork/${f.id}/cancel${params}`, { method: 'POST' });
+        f.status = 'cancelled';
+      } catch {}
+    },
+
+    async deleteForkOp(f) {
+      try {
+        const params = f.nodeId ? `?nodeId=${encodeURIComponent(f.nodeId)}` : '';
+        await fetch(`/api/fork/${f.id}/delete${params}`, { method: 'POST' });
+        f.status = 'deleting';
+        this.startForkPolling();
+      } catch {}
+    },
+
+    dismissForkOp(f) {
+      this.forkOps = this.forkOps.filter(x => x.id !== f.id);
     },
   };
 }
