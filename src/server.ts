@@ -117,5 +117,6 @@ app.get("/", async (c) => {
 
 export default {
   port: 3456,
+  idleTimeout: 120,
   fetch: app.fetch,
 };

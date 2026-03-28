@@ -96,7 +96,11 @@
 
     <!-- Messages area -->
     <div x-ref="messageArea" class="flex-1 overflow-y-auto p-4 mono text-sm space-y-1">
-      <template x-for="(msg, i) in messages" :key="i">
+      <!-- Pre-rendered history (raw HTML for performance) -->
+      <div x-html="renderedHistory"></div>
+
+      <!-- Live messages (only new messages arriving via SSE) -->
+      <template x-for="(msg, i) in liveMessages" :key="'live'+i">
         <div>
           <!-- System init -->
           <template x-if="msg.type === 'system' && msg.subtype === 'init'">
@@ -118,7 +122,7 @@
                   </template>
                   <template x-if="block.type === 'tool_result'">
                     <div class="ml-4 text-xs border-l border-gray-800 pl-2 max-h-40 overflow-y-auto text-gray-500">
-                      <template x-for="c in (block.content || [])">
+                      <template x-for="c in (Array.isArray(block.content) ? block.content : [])">
                         <div x-text="c.text || c.type" class="whitespace-pre-wrap"></div>
                       </template>
                       <template x-if="block.is_error">
@@ -275,7 +279,8 @@ function app() {
     // State
     managed: JSON.parse(localStorage.getItem('agent-link:managed') || '[]'),
     currentId: null,
-    messages: [],
+    renderedHistory: '',
+    liveMessages: [],
     streaming: { text: '', blocks: [], _toolName: '', _toolInput: '', _toolId: '' },
     inputText: '',
     cwd: localStorage.getItem('agent-link:cwd') || '',
@@ -354,7 +359,8 @@ function app() {
 
     newSession() {
       this.currentId = null;
-      this.messages = [];
+      this.renderedHistory = '';
+      this.liveMessages = [];
       this.streaming = { text: '', blocks: [], _toolName: '', _toolInput: '', _toolId: '' };
       this.seenUuids = new Set();
       this.totalCost = 0;
@@ -371,7 +377,7 @@ function app() {
       if (!this.currentId) {
         const prompt = this.inputText.trim();
         this.inputText = '';
-        this.messages.push({ type: 'user', message: { content: [{ type: 'text', text: prompt }] } });
+        this.liveMessages.push({ type: 'user', message: { content: [{ type: 'text', text: prompt }] } });
         this.scrollBottom();
 
         try {
@@ -381,7 +387,7 @@ function app() {
             body: JSON.stringify({ prompt, cwd: this.cwd, model: this.model }),
           });
           const data = await res.json();
-          if (data.error) { this.messages.push({ type: 'error', error: data.error }); return; }
+          if (data.error) { this.liveMessages.push({ type: 'error', error: data.error }); return; }
 
           this.currentId = data.sessionId;
           this.managed.unshift({
@@ -395,7 +401,7 @@ function app() {
           this.activeSet.add(data.sessionId);
           this.connectSSE(data.sessionId);
         } catch (err) {
-          this.messages.push({ type: 'error', error: err.message });
+          this.liveMessages.push({ type: 'error', error: err.message });
         }
         return;
       }
@@ -404,7 +410,7 @@ function app() {
       this.inputText = '';
 
       // Show user message
-      this.messages.push({ type: 'user', message: { content: [{ type: 'text', text: prompt }] } });
+      this.liveMessages.push({ type: 'user', message: { content: [{ type: 'text', text: prompt }] } });
       this.scrollBottom();
 
       const s = this.managed.find(s => s.sessionId === this.currentId);
@@ -420,7 +426,7 @@ function app() {
           }),
         });
         const data = await res.json();
-        if (data.error) { this.messages.push({ type: 'error', error: data.error }); return; }
+        if (data.error) { this.liveMessages.push({ type: 'error', error: data.error }); return; }
         this.activeSet.add(this.currentId);
 
         // Reconnect SSE to get fresh buffer
@@ -454,7 +460,8 @@ function app() {
     async switchSession(id) {
       if (this.currentId === id) return;
       this.currentId = id;
-      this.messages = [];
+      this.renderedHistory = '';
+      this.liveMessages = [];
       this.streaming = { text: '', blocks: [], _toolName: '', _toolInput: '', _toolId: '' };
       this.seenUuids = new Set();
       this.totalCost = 0;
@@ -474,10 +481,11 @@ function app() {
         const res = await fetch(`/api/sessions/${id}/messages?cwd=${encodeURIComponent(cwd)}`);
         if (res.ok) {
           const hist = await res.json();
-          this.messages = hist || [];
-          for (const m of this.messages) {
+          const msgs = hist || [];
+          for (const m of msgs) {
             if (m.uuid) this.seenUuids.add(m.uuid);
           }
+          this.renderedHistory = msgs.map(m => this.renderMsgHtml(m)).join('');
         }
       } catch {}
 
@@ -488,13 +496,21 @@ function app() {
 
     connectSSE(id) {
       if (this.eventSource) this.eventSource.close();
-      this.eventSource = new EventSource(`/api/events/${id}`);
-      this.eventSource.addEventListener('message', (e) => {
-        if (this.currentId !== id) return;
+      const es = new EventSource(`/api/events/${id}`);
+      this.eventSource = es;
+      es.addEventListener('message', (e) => {
+        if (this.currentId !== id) { es.close(); return; }
         try {
           const msg = JSON.parse(e.data);
           this.handleEvent(msg);
         } catch {}
+      });
+      es.addEventListener('error', () => {
+        // Prevent auto-reconnect for stale/inactive sessions
+        if (this.currentId !== id || !this.activeSet.has(id)) {
+          es.close();
+          if (this.eventSource === es) this.eventSource = null;
+        }
       });
     },
 
@@ -517,25 +533,25 @@ function app() {
       } else if (msg.type === 'assistant') {
         // Finalize: replace streaming with actual message
         this.streaming = { text: '', blocks: [], _toolName: '', _toolInput: '', _toolId: '' };
-        this.messages.push(msg);
+        this.liveMessages.push(msg);
       } else if (msg.type === 'user') {
-        this.messages.push(msg);
+        this.liveMessages.push(msg);
       } else if (msg.type === 'result') {
         this.totalCost += msg.total_cost_usd || 0;
         this.totalIn += msg.usage?.input_tokens || 0;
         this.totalOut += msg.usage?.output_tokens || 0;
-        this.messages.push(msg);
+        this.liveMessages.push(msg);
       } else if (msg.type === 'system') {
         // Skip init replay if we already have history loaded
         if (msg.subtype === 'init' && this.seenUuids.size > 0) return;
-        this.messages.push(msg);
+        this.liveMessages.push(msg);
       } else if (msg.type === 'status') {
         if (msg.status === 'idle') {
           this.activeSet.delete(this.currentId);
           this.activeSet = new Set(this.activeSet);
         }
       } else if (msg.type === 'error') {
-        this.messages.push(msg);
+        this.liveMessages.push(msg);
       }
 
       this.scrollBottom();
@@ -600,13 +616,83 @@ function app() {
       return s.length > 120 ? s.slice(0, 120) + '...' : s;
     },
 
+    _mdCache: new Map(),
+
+    esc(text) {
+      if (!text) return '';
+      return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    },
+
+    renderMsgHtml(msg) {
+      if (msg.type === 'system' && msg.subtype === 'init') {
+        return `<div class="text-gray-600 text-xs py-1 border-b border-gray-800/50 mb-2">Session ${this.esc(msg.session_id?.slice(0,8))} | model: ${this.esc(msg.model)} | cwd: ${this.esc(msg.cwd)} | tools: ${msg.tools?.length || 0}</div>`;
+      }
+      if (msg.type === 'user') {
+        const content = msg.message?.content;
+        if (typeof content === 'string') {
+          return `<div class="py-0.5"><div class="text-green-400 whitespace-pre-wrap"><span class="text-green-600/70">~ </span>${this.esc(content)}</div></div>`;
+        }
+        if (!Array.isArray(content)) return '';
+        let html = '<div class="py-0.5">';
+        for (const block of content) {
+          if (block.type === 'text') {
+            html += `<div class="text-green-400 whitespace-pre-wrap"><span class="text-green-600/70">~ </span>${this.esc(block.text)}</div>`;
+          } else if (block.type === 'tool_result') {
+            html += '<div class="ml-4 text-xs border-l border-gray-800 pl-2 max-h-40 overflow-y-auto text-gray-500">';
+            if (Array.isArray(block.content)) {
+              for (const c of block.content) {
+                html += `<div class="whitespace-pre-wrap">${this.esc(c.text || c.type)}</div>`;
+              }
+            } else if (typeof block.content === 'string') {
+              const truncated = block.content.length > 2000 ? block.content.slice(0, 2000) + '...' : block.content;
+              html += `<div class="whitespace-pre-wrap">${this.esc(truncated)}</div>`;
+            }
+            if (block.is_error) html += '<span class="text-red-400">(error)</span>';
+            html += '</div>';
+          }
+        }
+        html += '</div>';
+        return html;
+      }
+      if (msg.type === 'assistant') {
+        const content = msg.message?.content;
+        if (!Array.isArray(content)) return '';
+        let html = '<div class="py-0.5">';
+        for (const block of content) {
+          if (block.type === 'text') {
+            html += `<div class="text-gray-200 md-content">${this.renderMd(block.text)}</div>`;
+          } else if (block.type === 'tool_use') {
+            html += `<div class="text-yellow-400/80 text-xs mt-1"><span class="font-semibold">[${this.esc(block.name)}]</span> <span class="text-gray-600 ml-1">${this.esc(this.formatToolInput(block.input))}</span></div>`;
+          }
+        }
+        html += '</div>';
+        return html;
+      }
+      if (msg.type === 'result') {
+        const cls = msg.subtype === 'success' ? 'text-cyan-400/70' : 'text-red-400/70';
+        return `<div class="text-xs py-1.5 mt-2 border-t border-gray-800/50 ${cls}">${this.esc(msg.subtype)} | cost: $${(msg.total_cost_usd || 0).toFixed(4)} | turns: ${msg.num_turns} | in: ${msg.usage?.input_tokens || 0} out: ${msg.usage?.output_tokens || 0}</div>`;
+      }
+      if (msg.type === 'error') {
+        return `<div class="text-red-400 text-sm py-1">${this.esc(msg.error)}</div>`;
+      }
+      return '';
+    },
+
     renderMd(text) {
       if (!text) return '';
+      let html = this._mdCache.get(text);
+      if (html !== undefined) return html;
       try {
-        return marked.parse(text, { breaks: true });
+        html = marked.parse(text, { breaks: true });
       } catch {
-        return text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        html = text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
       }
+      this._mdCache.set(text, html);
+      if (this._mdCache.size > 500) {
+        const first = this._mdCache.keys().next().value;
+        this._mdCache.delete(first);
+      }
+      return html;
     },
 
     // Load modal
