@@ -748,10 +748,13 @@ function app() {
     },
 
     vscodeUrl(cwd, nodeId) {
-      if (this.panelMode && nodeId) {
-        return `/vscode/${encodeURIComponent(nodeId)}/${encodeURIComponent(cwd)}/`;
+      const key = (this.panelMode && nodeId) ? (nodeId + ':' + cwd) : cwd;
+      const item = this.vscodeActive[key];
+      if (!item?.id) return '#';
+      if (this.panelMode && item.nodeId) {
+        return `/vscode/${item.nodeId}/${item.id}/`;
       }
-      return `/vscode/${encodeURIComponent(cwd)}/`;
+      return `/vscode/${item.id}/`;
     },
 
     async refreshVscodeActive() {

@@ -14,8 +14,8 @@ import type {
 const wsTunnels = new Map<string, WebSocket>();
 
 function findPortForPath(path: string): number | null {
-  // Path format: /vscode/<encoded-cwd>/... → first segment after leading slash is encoded-cwd
-  // But from Panel, we get the path after nodeId already stripped: /<encoded-cwd>/...
+  // Path format: /<id>/... where id is a short hash of the cwd
+  // From Panel, we get the path after nodeId already stripped: /<id>/...
   const parts = path.split("/").filter(Boolean);
   const encodedCwd = parts[0] || "";
   if (!encodedCwd) return null;
