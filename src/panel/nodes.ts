@@ -1,52 +1,46 @@
-import type {
-  NodeToPanel,
-  PanelToNode,
-  MsgRequest,
-  MsgEvent,
-  MsgResponse,
-  MsgError,
-} from "../protocol";
+import type { NodeToPanel, PanelToNode } from "../protocol";
+import { load, save } from "../store";
 
 type Listener = (msg: any) => void;
 
+interface NodeRecord {
+  nodeId: string;
+  label: string;
+  approved: boolean;
+  firstSeen: number;
+  lastSeen: number;
+}
+
 export interface ConnectedNode {
   nodeId: string;
+  key: string;
   label: string;
   ws: WebSocket;
   online: boolean;
+  approved: boolean;
   activeSessionIds: string[];
   vscodeServers: { cwd: string; id: string; commit: string; port: number }[];
   connectedAt: number;
   lastHeartbeat: number;
 }
 
+const nodeRecords = load<Record<string, NodeRecord>>("nodes", {});
 const nodes = new Map<string, ConnectedNode>();
+const nodeKeyById = new Map<string, string>();
 const pendingRequests = new Map<
   string,
   { resolve: (data: any) => void; reject: (err: Error) => void; timer: Timer }
 >();
 
-// SSE event listeners per session: Panel subscribes browser SSE here
+for (const [key, record] of Object.entries(nodeRecords)) {
+  nodeKeyById.set(record.nodeId, key);
+}
+
 const eventListeners = new Map<string, Set<Listener>>();
 const eventBuffers = new Map<string, any[]>();
 
-// Valid tokens (simple set for POC)
-const validTokens = new Set<string>();
-
-let tokenCounter = 0;
-
-export function generateToken(): string {
-  const token = `tok_${Date.now()}_${++tokenCounter}_${Math.random().toString(36).slice(2, 10)}`;
-  validTokens.add(token);
-  return token;
-}
-
-export function listTokens(): string[] {
-  return [...validTokens];
-}
-
-export function revokeToken(token: string): boolean {
-  return validTokens.delete(token);
+function persistNodeRecords() {
+  save("nodes", nodeRecords);
 }
 
 export function getNode(nodeId: string): ConnectedNode | undefined {
@@ -57,16 +51,37 @@ export function listNodes(): {
   nodeId: string;
   label: string;
   online: boolean;
+  approved: boolean;
   activeSessionIds: string[];
   vscodeServers: ConnectedNode["vscodeServers"];
 }[] {
-  return [...nodes.values()].map((n) => ({
-    nodeId: n.nodeId,
-    label: n.label,
-    online: n.online,
-    activeSessionIds: n.activeSessionIds,
-    vscodeServers: n.vscodeServers,
-  }));
+  const knownIds = new Set<string>();
+  const data = Object.entries(nodeRecords).map(([key, record]) => {
+    const online = nodes.get(record.nodeId);
+    knownIds.add(record.nodeId);
+    return {
+      nodeId: record.nodeId,
+      label: online?.label || record.label,
+      online: !!online?.online,
+      approved: record.approved,
+      activeSessionIds: online?.activeSessionIds || [],
+      vscodeServers: online?.vscodeServers || [],
+      key,
+    };
+  });
+  for (const node of nodes.values()) {
+    if (knownIds.has(node.nodeId)) continue;
+    data.push({
+      nodeId: node.nodeId,
+      label: node.label,
+      online: node.online,
+      approved: node.approved,
+      activeSessionIds: node.activeSessionIds,
+      vscodeServers: node.vscodeServers,
+      key: node.key,
+    });
+  }
+  return data.map(({ key, ...rest }) => rest);
 }
 
 function sendToNode(node: ConnectedNode, msg: PanelToNode) {
@@ -84,7 +99,7 @@ export function requestNode(
   timeoutMs = 30000
 ): Promise<any> {
   const node = nodes.get(nodeId);
-  if (!node || !node.online) {
+  if (!node || !node.online || !node.approved) {
     return Promise.reject(new Error(`Node ${nodeId} is not online`));
   }
 
@@ -100,17 +115,14 @@ export function requestNode(
   });
 }
 
-// Subscribe to session events coming from any node
 export function subscribeSession(
   sessionId: string,
   listener: Listener
 ): () => void {
-  // Replay buffer
   const buf = eventBuffers.get(sessionId);
   if (buf) buf.forEach((msg) => listener(msg));
 
-  if (!eventListeners.has(sessionId))
-    eventListeners.set(sessionId, new Set());
+  if (!eventListeners.has(sessionId)) eventListeners.set(sessionId, new Set());
   eventListeners.get(sessionId)!.add(listener);
 
   return () => {
@@ -128,12 +140,10 @@ function broadcastEvent(sessionId: string, event: any) {
   });
 }
 
-// Clear event buffer when a new query starts
 export function clearEventBuffer(sessionId: string) {
   eventBuffers.set(sessionId, []);
 }
 
-// Find which node owns a session
 export function findNodeForSession(
   sessionId: string
 ): ConnectedNode | undefined {
@@ -143,13 +153,11 @@ export function findNodeForSession(
   return undefined;
 }
 
-// Send raw protocol message to a node's WS
 export function sendRaw(nodeId: string, msg: PanelToNode) {
   const node = nodes.get(nodeId);
   if (node) sendToNode(node, msg);
 }
 
-// Handle incoming WS message from a node
 export function handleNodeMessage(nodeId: string, raw: string) {
   let msg: NodeToPanel;
   try {
@@ -164,13 +172,17 @@ export function handleNodeMessage(nodeId: string, raw: string) {
     case "heartbeat":
       if (node) {
         node.lastHeartbeat = Date.now();
-        node.activeSessionIds = msg.activeSessionIds;
-        node.vscodeServers = msg.vscodeServers;
+        if (node.approved) {
+          node.activeSessionIds = msg.activeSessionIds;
+          node.vscodeServers = msg.vscodeServers;
+        }
       }
       break;
 
     case "event":
-      broadcastEvent(msg.sessionId, msg.event);
+      if (node?.approved) {
+        broadcastEvent(msg.sessionId, msg.event);
+      }
       break;
 
     case "response": {
@@ -193,21 +205,17 @@ export function handleNodeMessage(nodeId: string, raw: string) {
       break;
     }
 
-    // Tunnel messages are handled by tunnel.ts via onTunnelMessage callback
     case "tunnel:response":
     case "tunnel:ws-opened":
     case "tunnel:ws-data":
     case "tunnel:ws-close":
-      tunnelHandler?.(msg);
+      if (node?.approved) tunnelHandler?.(msg);
       break;
   }
 }
 
 type TunnelMessageHandler = (
-  msg: Extract<
-    NodeToPanel,
-    { type: `tunnel:${string}` }
-  >
+  msg: Extract<NodeToPanel, { type: `tunnel:${string}` }>
 ) => void;
 
 let tunnelHandler: TunnelMessageHandler | null = null;
@@ -216,53 +224,95 @@ export function onTunnelMessage(handler: TunnelMessageHandler) {
   tunnelHandler = handler;
 }
 
-// Register a new node connection
 export function registerNode(
   ws: WebSocket,
-  token: string,
-  label: string,
-  requestedNodeId?: string
-): string | null {
-  if (!validTokens.has(token)) return null;
-
-  // Reuse nodeId if reconnecting, otherwise generate new
-  let nodeId = requestedNodeId;
-  if (nodeId && nodes.has(nodeId)) {
-    const existing = nodes.get(nodeId)!;
-    // Close old connection if still open
-    if (
-      existing.ws !== ws &&
-      existing.ws.readyState !== WebSocket.CLOSED
-    ) {
-      existing.ws.close();
-    }
+  key: string,
+  label: string
+): { nodeId: string; approved: boolean } {
+  const now = Date.now();
+  let record = nodeRecords[key];
+  if (!record) {
+    const nodeId = `node_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    record = {
+      nodeId,
+      label,
+      approved: false,
+      firstSeen: now,
+      lastSeen: now,
+    };
+    nodeRecords[key] = record;
+    persistNodeRecords();
+  } else {
+    record.label = label || record.label;
+    record.lastSeen = now;
+    persistNodeRecords();
   }
-  if (!nodeId) {
-    nodeId = `node_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  nodeKeyById.set(record.nodeId, key);
+
+  const existing = nodes.get(record.nodeId);
+  if (existing && existing.ws !== ws && existing.ws.readyState !== WebSocket.CLOSED) {
+    existing.ws.close();
   }
 
-  nodes.set(nodeId, {
-    nodeId,
-    label,
+  nodes.set(record.nodeId, {
+    nodeId: record.nodeId,
+    key,
+    label: record.label,
     ws: ws as any,
     online: true,
+    approved: record.approved,
     activeSessionIds: [],
     vscodeServers: [],
-    connectedAt: Date.now(),
-    lastHeartbeat: Date.now(),
+    connectedAt: now,
+    lastHeartbeat: now,
   });
 
-  return nodeId;
+  return { nodeId: record.nodeId, approved: record.approved };
+}
+
+export function approveNode(nodeId: string): boolean {
+  const key = nodeKeyById.get(nodeId);
+  if (!key) return false;
+  const record = nodeRecords[key];
+  if (!record) return false;
+  record.approved = true;
+  record.lastSeen = Date.now();
+  persistNodeRecords();
+  const node = nodes.get(nodeId);
+  if (node) {
+    node.approved = true;
+    sendToNode(node, { type: "registered", nodeId });
+  }
+  return true;
+}
+
+export function renameNode(nodeId: string, label: string): boolean {
+  const key = nodeKeyById.get(nodeId);
+  if (!key || !label) return false;
+  const record = nodeRecords[key];
+  if (!record) return false;
+  record.label = label;
+  record.lastSeen = Date.now();
+  persistNodeRecords();
+  const node = nodes.get(nodeId);
+  if (node) node.label = label;
+  return true;
 }
 
 export function markOffline(nodeId: string) {
   const node = nodes.get(nodeId);
   if (node) {
     node.online = false;
+    node.activeSessionIds = [];
+    node.vscodeServers = [];
+    const record = nodeRecords[node.key];
+    if (record) {
+      record.lastSeen = Date.now();
+      persistNodeRecords();
+    }
   }
 }
 
-// Ping all nodes periodically
 setInterval(() => {
   for (const node of nodes.values()) {
     if (node.online) {

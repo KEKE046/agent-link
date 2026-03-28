@@ -4,8 +4,7 @@
 
 export interface MsgRegister {
   type: "register";
-  token: string;
-  nodeId?: string;
+  key: string;
   label: string;
 }
 
@@ -78,6 +77,10 @@ export interface MsgRegistered {
   nodeId: string;
 }
 
+export interface MsgPending {
+  type: "pending";
+}
+
 export interface MsgRequest {
   type: "request";
   requestId: string;
@@ -108,6 +111,7 @@ export interface MsgTunnelWsOpen {
 // Panel reuses MsgTunnelWsData and MsgTunnelWsClose for sending to Node too
 export type PanelToNode =
   | MsgRegistered
+  | MsgPending
   | MsgRequest
   | MsgPing
   | MsgTunnelRequest

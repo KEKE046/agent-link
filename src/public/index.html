@@ -148,7 +148,10 @@
                    class="px-3 py-2 flex items-center gap-1.5 cursor-pointer hover:bg-gray-800/50 text-xs text-gray-300 sticky top-0 bg-gray-900 border-b border-gray-800/50 z-10">
                 <span x-text="expandedGroups.has('node:' + n.nodeId) ? '▾' : '▸'" class="text-gray-600 w-3"></span>
                 <span class="w-2 h-2 rounded-full flex-shrink-0" :class="isNodeOnline(n.nodeId) ? 'bg-green-400' : 'bg-gray-600'"></span>
-                <span class="truncate flex-1 font-semibold" x-text="n.label || n.nodeId"></span>
+                <button @click.stop="renameNodePrompt(n)" class="truncate flex-1 font-semibold text-left hover:text-blue-300" x-text="n.label || n.nodeId"></button>
+                <button x-show="!n.approved" @click.stop="approveNode(n.nodeId)" title="Approve node"
+                        class="px-1 py-0.5 rounded text-[10px] text-green-300 hover:bg-green-900/30">✓</button>
+                <span x-show="!n.approved" class="text-[10px] text-yellow-400">pending</span>
               </div>
               <template x-if="expandedGroups.has('node:' + n.nodeId)">
                 <div>
@@ -266,11 +269,15 @@
               :title="sidebarToggleLabel()"
               x-text="sidebarCollapsed ? '☰' : '◧'"></button>
       <template x-if="panelMode">
-        <select x-model="selectedNodeId" class="bg-gray-800 text-gray-300 rounded px-2 py-1 text-xs outline-none">
-          <template x-for="n in nodes" :key="n.nodeId">
-            <option :value="n.nodeId" :disabled="!n.online" x-text="(n.online ? '● ' : '○ ') + (n.label || n.nodeId)"></option>
-          </template>
-        </select>
+        <div class="flex items-center gap-2">
+          <select x-model="selectedNodeId" class="bg-gray-800 text-gray-300 rounded px-2 py-1 text-xs outline-none">
+            <template x-for="n in nodes" :key="n.nodeId">
+              <option :value="n.nodeId" :disabled="!n.online || !n.approved" x-text="(n.online ? '● ' : '○ ') + (n.label || n.nodeId) + (n.approved ? '' : ' (pending)')"></option>
+            </template>
+          </select>
+          <input x-model="panelAdminSecret" type="password" placeholder="admin secret"
+                 class="bg-gray-800 text-gray-300 rounded px-2 py-1 text-xs outline-none w-28" />
+        </div>
       </template>
       <button @click="toggleTheme()"
               class="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-xs flex-shrink-0"
@@ -448,12 +455,27 @@
       </div>
     </div>
   </div>
+
+  <!-- Rename node modal -->
+  <template x-if="renameModal">
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @click.self="renameModal = null" @keydown.escape.window="renameModal = null">
+      <div class="bg-gray-800 rounded-lg shadow-xl p-4 w-72">
+        <div class="text-sm text-gray-300 mb-2">Rename node</div>
+        <input x-ref="renameInput" x-model="renameModal.label" @keydown.enter="renameNodeSubmit()" @keydown.escape="renameModal = null"
+               class="w-full bg-gray-900 text-gray-100 rounded px-3 py-1.5 text-sm outline-none border border-gray-600 focus:border-blue-500" />
+        <div class="flex justify-end gap-2 mt-3">
+          <button @click="renameModal = null" class="px-3 py-1 rounded text-xs text-gray-400 hover:bg-gray-700">Cancel</button>
+          <button @click="renameNodeSubmit()" class="px-3 py-1 rounded text-xs bg-blue-600 hover:bg-blue-500 text-white">Save</button>
+        </div>
+      </div>
+    </div>
+  </template>
 </div>
 
 <script>
 function app() {
   return {
-    managed: JSON.parse(localStorage.getItem('agent-link:managed') || '[]'),
+    managed: [],
     currentId: null,
     inputText: '',
     cwd: localStorage.getItem('agent-link:cwd') || '',
@@ -499,12 +521,14 @@ function app() {
     panelMode: false,
     nodes: [],
     selectedNodeId: localStorage.getItem('agent-link:nodeId') || '',
+    panelAdminSecret: '',
+    renameModal: null, // { nodeId, label }
 
     init() {
       Alpine.store('active', false);
       if (!this.cwd) this.cwd = window.location.hostname === 'localhost' ? '.' : '/';
       this.applyTheme();
-      this.detectPanelMode();
+      this.detectPanelMode().then(() => this.loadManaged());
       this.refreshActive();
       this.refreshVscodeActive();
       setInterval(() => { this.refreshActive(); this.refreshVscodeActive(); if (this.panelMode) this.refreshNodes(); }, 5000);
@@ -543,11 +567,72 @@ function app() {
       }
     },
 
+    async loadManaged() {
+      try {
+        const res = await fetch('/api/managed');
+        if (res.ok) {
+          const list = await res.json();
+          this.managed = (list || []).map(item => ({
+            sessionId: item.id,
+            cwd: item.cwd,
+            model: item.model || '',
+            label: item.label || item.id?.slice(0, 12) || '',
+            nodeId: item.nodeId,
+            createdAt: item.createdAt,
+          }));
+          return;
+        }
+      } catch {}
+      this.managed = JSON.parse(localStorage.getItem('agent-link:managed') || '[]');
+      for (const s of this.managed) {
+        await this.saveManagedItem(s);
+      }
+      localStorage.removeItem('agent-link:managed');
+    },
+
     async refreshNodes() {
       try {
         const res = await fetch('/api/nodes');
         if (res.ok) this.nodes = await res.json();
       } catch {}
+    },
+
+    async approveNode(nodeId) {
+      if (!this.panelAdminSecret) return alert('Set admin secret in header first');
+      try {
+        await fetch(`/api/nodes/${encodeURIComponent(nodeId)}/approve`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${this.panelAdminSecret}` },
+        });
+      } catch {}
+      this.refreshNodes();
+    },
+
+    async renameNodePrompt(node) {
+      this.renameModal = { nodeId: node.nodeId, label: node.label || node.nodeId };
+      await this.$nextTick();
+      this.$refs.renameInput?.focus();
+      this.$refs.renameInput?.select();
+    },
+
+    async renameNodeSubmit() {
+      const m = this.renameModal;
+      if (!m) return;
+      const label = m.label.trim();
+      if (!label) { this.renameModal = null; return; }
+      if (!this.panelAdminSecret) { this.renameModal = null; return alert('Set admin secret in header first'); }
+      try {
+        await fetch(`/api/nodes/${encodeURIComponent(m.nodeId)}/label`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.panelAdminSecret}`,
+          },
+          body: JSON.stringify({ label }),
+        });
+      } catch {}
+      this.renameModal = null;
+      this.refreshNodes();
     },
 
     isNodeOnline(nodeId) {
@@ -560,7 +645,7 @@ function app() {
       const nodeMap = new Map();
       // Initialize from known nodes
       for (const n of this.nodes) {
-        nodeMap.set(n.nodeId, { nodeId: n.nodeId, label: n.label, cwdGroups: [] });
+        nodeMap.set(n.nodeId, { nodeId: n.nodeId, label: n.label, approved: n.approved, cwdGroups: [] });
       }
       // Group sessions
       const cwdMap = new Map(); // nodeId:cwd → sessions
@@ -573,7 +658,7 @@ function app() {
       // Assign cwd groups to nodes
       for (const [, group] of cwdMap) {
         if (!nodeMap.has(group.nodeId)) {
-          nodeMap.set(group.nodeId, { nodeId: group.nodeId, label: group.nodeId, cwdGroups: [] });
+          nodeMap.set(group.nodeId, { nodeId: group.nodeId, label: group.nodeId, approved: true, cwdGroups: [] });
         }
         nodeMap.get(group.nodeId).cwdGroups.push(group);
       }
@@ -757,8 +842,20 @@ function app() {
       this.refreshVscodeActive();
     },
 
-    saveManaged() {
-      localStorage.setItem('agent-link:managed', JSON.stringify(this.managed));
+    async saveManagedItem(item) {
+      const body = {
+        id: item.sessionId,
+        cwd: item.cwd || '',
+        nodeId: item.nodeId,
+        createdAt: item.createdAt || Date.now(),
+      };
+      try {
+        await fetch('/api/managed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+      } catch {}
     },
 
     get groupedManaged() {
@@ -826,7 +923,7 @@ function app() {
           const entry = { sessionId: data.sessionId, cwd: this.cwd, model: this.model, label: prompt.slice(0, 40) };
           if (nodeId) entry.nodeId = nodeId;
           this.managed.unshift(entry);
-          this.saveManaged();
+          this.saveManagedItem(entry);
           if (this.panelMode && nodeId) {
             this.expandGroup('node:' + nodeId);
             this.expandGroup(nodeId + ':' + this.cwd);
@@ -876,8 +973,10 @@ function app() {
     async changeModel() {
       if (!this.currentId) return;
       const s = this.managed.find(s => s.sessionId === this.currentId);
-      if (s) s.model = this.model;
-      this.saveManaged();
+      if (s) {
+        s.model = this.model;
+        this.saveManagedItem(s);
+      }
       try {
         const headers = { 'Content-Type': 'application/json' };
         if (this.panelMode && s?.nodeId) headers['x-node-id'] = s.nodeId;
@@ -1012,7 +1111,7 @@ function app() {
         };
         if (session.nodeId) entry.nodeId = session.nodeId;
         this.managed.unshift(entry);
-        this.saveManaged();
+        this.saveManagedItem(entry);
         if (this.panelMode && session.nodeId) {
           this.expandGroup('node:' + session.nodeId);
           this.expandGroup(session.nodeId + ':' + (session.cwd || this.cwd));
@@ -1024,9 +1123,9 @@ function app() {
       this.switchSession(session.sessionId);
     },
 
-    removeManaged(id) {
+    async removeManaged(id) {
       this.managed = this.managed.filter(s => s.sessionId !== id);
-      this.saveManaged();
+      try { await fetch(`/api/managed/${encodeURIComponent(id)}`, { method: 'DELETE' }); } catch {}
       if (this.currentId === id) {
         this.currentId = null;
         this.msg('clear');

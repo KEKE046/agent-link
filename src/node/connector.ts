@@ -122,6 +122,9 @@ function handleMessage(raw: string) {
       nodeId = msg.nodeId;
       console.log(`[node] Registered as ${nodeId}`);
       break;
+    case "pending":
+      console.log("[node] Waiting for approval from panel...");
+      break;
     case "request":
       handleRequest(msg);
       break;
@@ -176,7 +179,7 @@ function setupEventForwarding() {
   }, 500);
 }
 
-export function connect(panelUrl: string, token: string) {
+export function connect(panelUrl: string, key: string) {
   const wsUrl = panelUrl.replace(/^http/, "ws") + "/ws/node";
   console.log(`[node] Connecting to ${wsUrl}...`);
 
@@ -189,8 +192,7 @@ export function connect(panelUrl: string, token: string) {
 
     send({
       type: "register",
-      token,
-      nodeId: nodeId || undefined,
+      key,
       label,
     });
 
@@ -212,7 +214,7 @@ export function connect(panelUrl: string, token: string) {
     console.log(`[node] Disconnected. Reconnecting in ${reconnectDelay}ms...`);
     setTimeout(() => {
       reconnectDelay = Math.min(reconnectDelay * 2, 60000);
-      connect(panelUrl, token);
+      connect(panelUrl, key);
     }, reconnectDelay);
   });
 

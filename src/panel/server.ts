@@ -8,11 +8,10 @@ import {
   clearEventBuffer,
   findNodeForSession,
   registerNode,
+  approveNode,
+  renameNode,
   markOffline,
   handleNodeMessage,
-  generateToken,
-  listTokens,
-  revokeToken,
   sendRaw,
 } from "./nodes";
 import {
@@ -22,6 +21,7 @@ import {
   tunnelWsClose,
 } from "./tunnel";
 import type { MsgRegister } from "../protocol";
+import { addManaged, listManaged, removeManaged } from "../managed";
 import indexHtml from "../public/index.html" with { type: "text" };
 import rendererJs from "../public/renderer.js" with { type: "text" };
 import stylesCss from "../public/styles.css" with { type: "text" };
@@ -29,7 +29,7 @@ import stylesCss from "../public/styles.css" with { type: "text" };
 const app = new Hono();
 const isDev = Bun.env.NODE_ENV === "development";
 
-// Admin secret for token management endpoints. Set PANEL_ADMIN_SECRET env var.
+// Admin secret for admin-only endpoints. Set PANEL_ADMIN_SECRET env var.
 const adminSecret = Bun.env.PANEL_ADMIN_SECRET;
 
 function checkAdminAuth(c: Context): Response | null {
@@ -57,22 +57,21 @@ app.get("/api/nodes", (c) => {
   return c.json(listNodes());
 });
 
-app.post("/api/nodes/token", (c) => {
+app.post("/api/nodes/:nodeId/approve", (c) => {
   const deny = checkAdminAuth(c);
   if (deny) return deny;
-  return c.json({ token: generateToken() });
+  const nodeId = c.req.param("nodeId");
+  return c.json({ ok: approveNode(nodeId) });
 });
 
-app.get("/api/nodes/tokens", (c) => {
+app.post("/api/nodes/:nodeId/label", async (c) => {
   const deny = checkAdminAuth(c);
   if (deny) return deny;
-  return c.json(listTokens());
-});
-
-app.delete("/api/nodes/token/:token", (c) => {
-  const deny = checkAdminAuth(c);
-  if (deny) return deny;
-  return c.json({ ok: revokeToken(c.req.param("token")) });
+  const nodeId = c.req.param("nodeId");
+  const body = await c.req.json();
+  const label = typeof body?.label === "string" ? body.label.trim() : "";
+  if (!label) return c.json({ error: "label required" }, 400);
+  return c.json({ ok: renameNode(nodeId, label) });
 });
 
 // --- Forwarded session APIs ---
@@ -271,6 +270,30 @@ app.get("/api/active", (c) => {
   return c.json(all);
 });
 
+app.get("/api/managed", (c) => {
+  return c.json(listManaged());
+});
+
+app.post("/api/managed", async (c) => {
+  const body = await c.req.json();
+  const id = typeof body?.id === "string" ? body.id : "";
+  const cwd = typeof body?.cwd === "string" ? body.cwd : "";
+  if (!id || !cwd) return c.json({ error: "id and cwd required" }, 400);
+  return c.json(
+    addManaged({
+      id,
+      nodeId: typeof body?.nodeId === "string" ? body.nodeId : undefined,
+      cwd,
+      createdAt:
+        typeof body?.createdAt === "number" ? body.createdAt : Date.now(),
+    })
+  );
+});
+
+app.delete("/api/managed/:id", (c) => {
+  return c.json(removeManaged(c.req.param("id")));
+});
+
 // VSCode APIs — aggregated from nodes
 app.get("/api/vscode/versions", async (c) => {
   const nodeId = getNodeId(c);
@@ -406,7 +429,7 @@ export default {
       const parts = url.pathname.split("/");
       const nodeId = parts[2] || "";
       const node = getNode(nodeId);
-      if (!node || !node.online) {
+      if (!node || !node.online || !node.approved) {
         return new Response("Node not found or offline", { status: 502 });
       }
 
@@ -497,23 +520,22 @@ export default {
                 : new TextDecoder().decode(message)
             );
             if (msg.type === "register") {
-              const nodeId = registerNode(
+              const reg = registerNode(
                 ws as any,
-                msg.token,
-                msg.label,
-                msg.nodeId
+                msg.key,
+                msg.label
               );
-              if (nodeId) {
-                data.nodeId = nodeId;
+              data.nodeId = reg.nodeId;
+              if (reg.approved) {
                 ws.send(
-                  JSON.stringify({ type: "registered", nodeId })
+                  JSON.stringify({ type: "registered", nodeId: reg.nodeId })
                 );
-                console.log(`[panel] Node registered: ${nodeId} (${msg.label})`);
+                console.log(`[panel] Node registered: ${reg.nodeId} (${msg.label})`);
               } else {
                 ws.send(
-                  JSON.stringify({ type: "error", error: "invalid token" })
+                  JSON.stringify({ type: "pending" })
                 );
-                ws.close();
+                console.log(`[panel] Node pending approval: ${reg.nodeId} (${msg.label})`);
               }
             }
           } catch {}
