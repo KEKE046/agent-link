@@ -22,7 +22,7 @@ describe("store json persistence", () => {
     save("sample", { v: 1 });
     const first = load("sample", { v: 0 });
     expect(first).toEqual({ v: 1 });
-    await Bun.sleep(5);
+    await Bun.sleep(50);
     writeFileSync(join(root, "sample.json"), JSON.stringify({ v: 2 }), "utf8");
     const second = load("sample", { v: 0 });
     expect(second).toEqual({ v: 2 });
