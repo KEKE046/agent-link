@@ -6,11 +6,12 @@
   <title>Agent Link</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="/renderer.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
   <style>
     [x-cloak] { display: none !important; }
     .mono { font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace; }
-    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar { width: 6px; height: 0; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
     @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
@@ -34,6 +35,14 @@
     .md-content h3 { font-size: 1em; }
     .md-content a { color: #60a5fa; text-decoration: underline; }
     .md-content hr { border-color: #374151; margin: 0.5rem 0; }
+    /* Collapsible tool details */
+    .tool-details > summary { list-style: none; }
+    .tool-details > summary::-webkit-details-marker { display: none; }
+    .tool-details > summary::before { content: '▸ '; font-size: 0.75em; color: #4b5563; }
+    .tool-details[open] > summary::before { content: '▾ '; }
+    /* Prevent horizontal overflow */
+    .tool-line { overflow-wrap: anywhere; }
+    .tool-item { overflow: hidden; }
   </style>
 </head>
 <body class="bg-gray-950 text-gray-100 h-screen overflow-hidden">
@@ -94,107 +103,36 @@
               class="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded">Apply Model</button>
     </div>
 
-    <!-- Messages area -->
-    <div x-ref="messageArea" class="flex-1 overflow-y-auto p-4 mono text-sm space-y-1">
-      <!-- Pre-rendered history (raw HTML for performance) -->
-      <div x-html="renderedHistory"></div>
-
-      <!-- Live messages (only new messages arriving via SSE) -->
-      <template x-for="(msg, i) in liveMessages" :key="'live'+i">
-        <div>
-          <!-- System init -->
-          <template x-if="msg.type === 'system' && msg.subtype === 'init'">
-            <div class="text-gray-600 text-xs py-1 border-b border-gray-800/50 mb-2">
-              Session <span x-text="msg.session_id?.slice(0,8)"></span>
-              | model: <span x-text="msg.model"></span>
-              | cwd: <span x-text="msg.cwd"></span>
-              | tools: <span x-text="msg.tools?.length || 0"></span>
-            </div>
-          </template>
-
-          <!-- User -->
-          <template x-if="msg.type === 'user'">
-            <div class="py-0.5">
-              <template x-for="block in msg.message?.content || []">
-                <div>
-                  <template x-if="block.type === 'text'">
-                    <div class="text-green-400 whitespace-pre-wrap"><span class="text-green-600/70">~ </span><span x-text="block.text"></span></div>
-                  </template>
-                  <template x-if="block.type === 'tool_result'">
-                    <div class="ml-4 text-xs border-l border-gray-800 pl-2 max-h-40 overflow-y-auto text-gray-500">
-                      <template x-for="c in (Array.isArray(block.content) ? block.content : [])">
-                        <div x-text="c.text || c.type" class="whitespace-pre-wrap"></div>
-                      </template>
-                      <template x-if="block.is_error">
-                        <span class="text-red-400">(error)</span>
-                      </template>
-                    </div>
-                  </template>
-                </div>
-              </template>
-            </div>
-          </template>
-
-          <!-- Assistant -->
-          <template x-if="msg.type === 'assistant'">
-            <div class="py-0.5">
-              <template x-for="block in msg.message?.content || []">
-                <div>
-                  <template x-if="block.type === 'text'">
-                    <div class="text-gray-200 md-content" x-html="renderMd(block.text)"></div>
-                  </template>
-                  <template x-if="block.type === 'tool_use'">
-                    <div class="text-yellow-400/80 text-xs mt-1">
-                      <span class="font-semibold" x-text="'[' + block.name + ']'"></span>
-                      <span class="text-gray-600 ml-1" x-text="formatToolInput(block.input)"></span>
-                    </div>
-                  </template>
-                </div>
-              </template>
-            </div>
-          </template>
-
-          <!-- Result -->
-          <template x-if="msg.type === 'result'">
-            <div class="text-xs py-1.5 mt-2 border-t border-gray-800/50"
-                 :class="msg.subtype === 'success' ? 'text-cyan-400/70' : 'text-red-400/70'">
-              <span x-text="msg.subtype"></span>
-              | cost: $<span x-text="(msg.total_cost_usd || 0).toFixed(4)"></span>
-              | turns: <span x-text="msg.num_turns"></span>
-              | in: <span x-text="msg.usage?.input_tokens || 0"></span>
-              out: <span x-text="msg.usage?.output_tokens || 0"></span>
-            </div>
-          </template>
-
-          <!-- Error -->
-          <template x-if="msg.type === 'error'">
-            <div class="text-red-400 text-sm py-1" x-text="msg.error"></div>
-          </template>
-        </div>
-      </template>
+    <!-- Messages area (Alpine component) -->
+    <div x-data="messages"
+         class="flex-1 overflow-y-auto overflow-x-hidden p-4 mono text-sm space-y-1">
+      <div x-ref="rendered"></div>
 
       <!-- Streaming blocks (finalized parts of current response) -->
       <template x-for="(block, i) in streaming.blocks" :key="'sb'+i">
         <div>
           <template x-if="block.type === 'text'">
-            <div class="whitespace-pre-wrap text-gray-200" x-text="block.text"></div>
+            <div class="text-gray-200 md-content" x-html="R.renderMd(block.text)"></div>
           </template>
           <template x-if="block.type === 'tool_use'">
-            <div class="text-yellow-400/80 text-xs mt-1">
-              <span class="font-semibold" x-text="'[' + block.name + ']'"></span>
-              <span class="text-gray-600 ml-1" x-text="formatToolInput(block.input)"></span>
-            </div>
+            <div class="tool-line text-xs py-0.5" x-html="R.renderToolUse(block.name, block.input)"></div>
           </template>
         </div>
       </template>
 
-      <!-- Streaming text (live typing) -->
-      <div x-show="streaming.text" class="text-gray-200 md-content">
-        <span x-html="renderMd(streaming.text)"></span><span class="cursor-blink text-gray-500">|</span>
+      <!-- Active tool being streamed -->
+      <div x-show="streaming._toolName" class="text-xs py-0.5">
+        <span class="text-yellow-500/80 font-semibold" x-text="streaming._toolName"></span>
+        <span class="text-gray-600 animate-pulse">...</span>
       </div>
 
-      <!-- Active indicator when no streaming text visible -->
-      <div x-show="currentId && activeSet.has(currentId) && !streaming.text && streaming.blocks.length === 0"
+      <!-- Streaming text (live typing) -->
+      <div x-show="streaming.text" class="text-gray-200 md-content">
+        <span x-html="R.renderMd(streaming.text)"></span><span class="cursor-blink text-gray-500">|</span>
+      </div>
+
+      <!-- Thinking indicator -->
+      <div x-show="$store.active && !streaming.text && streaming.blocks.length === 0 && !streaming._toolName"
            class="text-gray-600 text-xs py-1">
         <span class="animate-pulse">thinking...</span>
       </div>
@@ -276,12 +214,8 @@
 <script>
 function app() {
   return {
-    // State
     managed: JSON.parse(localStorage.getItem('agent-link:managed') || '[]'),
     currentId: null,
-    renderedHistory: '',
-    liveMessages: [],
-    streaming: { text: '', blocks: [], _toolName: '', _toolInput: '', _toolId: '' },
     inputText: '',
     cwd: localStorage.getItem('agent-link:cwd') || '',
     model: localStorage.getItem('agent-link:model') || 'claude-sonnet-4-6',
@@ -293,7 +227,6 @@ function app() {
     totalOut: 0,
     expandedGroups: new Set(),
 
-    // Load modal
     showLoadModal: false,
     browseSessions: [],
     browseLoading: false,
@@ -304,6 +237,7 @@ function app() {
     browseHasMore: false,
 
     init() {
+      Alpine.store('active', false);
       if (!this.cwd) this.cwd = window.location.hostname === 'localhost' ? '.' : '/';
       this.refreshActive();
       setInterval(() => this.refreshActive(), 5000);
@@ -311,11 +245,20 @@ function app() {
       this.$watch('model', (v) => localStorage.setItem('agent-link:model', v));
     },
 
+    // Dispatch event to messages component
+    syncActive() {
+      Alpine.store('active', !!(this.currentId && this.activeSet.has(this.currentId)));
+    },
+
+    msg(type, detail) {
+      window.dispatchEvent(new CustomEvent('msg:' + type, { detail }));
+    },
+
     async refreshActive() {
       try {
         const res = await fetch('/api/active');
-        const ids = await res.json();
-        this.activeSet = new Set(ids);
+        this.activeSet = new Set(await res.json());
+        this.syncActive();
       } catch {}
     },
 
@@ -344,11 +287,7 @@ function app() {
     },
 
     toggleGroup(cwd) {
-      if (this.expandedGroups.has(cwd)) {
-        this.expandedGroups.delete(cwd);
-      } else {
-        this.expandedGroups.add(cwd);
-      }
+      this.expandedGroups.has(cwd) ? this.expandedGroups.delete(cwd) : this.expandedGroups.add(cwd);
       this.expandedGroups = new Set(this.expandedGroups);
     },
 
@@ -359,9 +298,7 @@ function app() {
 
     newSession() {
       this.currentId = null;
-      this.renderedHistory = '';
-      this.liveMessages = [];
-      this.streaming = { text: '', blocks: [], _toolName: '', _toolInput: '', _toolId: '' };
+      this.msg('clear');
       this.seenUuids = new Set();
       this.totalCost = 0;
       this.totalIn = 0;
@@ -373,12 +310,10 @@ function app() {
     async send() {
       if (!this.inputText.trim()) return;
 
-      // No current session — create a new one
       if (!this.currentId) {
         const prompt = this.inputText.trim();
         this.inputText = '';
-        this.liveMessages.push({ type: 'user', message: { content: [{ type: 'text', text: prompt }] } });
-        this.scrollBottom();
+        this.msg('append', { type: 'user', message: { content: [{ type: 'text', text: prompt }] } });
 
         try {
           const res = await fetch('/api/query', {
@@ -387,60 +322,45 @@ function app() {
             body: JSON.stringify({ prompt, cwd: this.cwd, model: this.model }),
           });
           const data = await res.json();
-          if (data.error) { this.liveMessages.push({ type: 'error', error: data.error }); return; }
+          if (data.error) { this.msg('append', { type: 'error', error: data.error }); return; }
 
           this.currentId = data.sessionId;
-          this.managed.unshift({
-            sessionId: data.sessionId,
-            cwd: this.cwd,
-            model: this.model,
-            label: prompt.slice(0, 40),
-          });
+          this.managed.unshift({ sessionId: data.sessionId, cwd: this.cwd, model: this.model, label: prompt.slice(0, 40) });
           this.saveManaged();
           this.expandGroup(this.cwd);
           this.activeSet.add(data.sessionId);
+          this.syncActive();
           this.connectSSE(data.sessionId);
         } catch (err) {
-          this.liveMessages.push({ type: 'error', error: err.message });
+          this.msg('append', { type: 'error', error: err.message });
         }
         return;
       }
 
       const prompt = this.inputText.trim();
       this.inputText = '';
-
-      // Show user message
-      this.liveMessages.push({ type: 'user', message: { content: [{ type: 'text', text: prompt }] } });
-      this.scrollBottom();
+      this.msg('append', { type: 'user', message: { content: [{ type: 'text', text: prompt }] } });
 
       const s = this.managed.find(s => s.sessionId === this.currentId);
       try {
         const res = await fetch('/api/query', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt,
-            sessionId: this.currentId,
-            cwd: s?.cwd || this.cwd,
-            model: s?.model || this.model,
-          }),
+          body: JSON.stringify({ prompt, sessionId: this.currentId, cwd: s?.cwd || this.cwd, model: s?.model || this.model }),
         });
         const data = await res.json();
-        if (data.error) { this.liveMessages.push({ type: 'error', error: data.error }); return; }
+        if (data.error) { this.msg('append', { type: 'error', error: data.error }); return; }
         this.activeSet.add(this.currentId);
-
-        // Reconnect SSE to get fresh buffer
+        this.syncActive();
         this.connectSSE(this.currentId);
       } catch (err) {
-        this.messages.push({ type: 'error', error: err.message });
+        this.msg('append', { type: 'error', error: err.message });
       }
     },
 
     async interruptSession() {
       if (!this.currentId) return;
-      try {
-        await fetch(`/api/interrupt/${this.currentId}`, { method: 'POST' });
-      } catch {}
+      try { await fetch(`/api/interrupt/${this.currentId}`, { method: 'POST' }); } catch {}
     },
 
     async changeModel() {
@@ -460,9 +380,7 @@ function app() {
     async switchSession(id) {
       if (this.currentId === id) return;
       this.currentId = id;
-      this.renderedHistory = '';
-      this.liveMessages = [];
-      this.streaming = { text: '', blocks: [], _toolName: '', _toolInput: '', _toolId: '' };
+      this.msg('clear');
       this.seenUuids = new Set();
       this.totalCost = 0;
       this.totalIn = 0;
@@ -475,23 +393,17 @@ function app() {
         if (s.model) this.model = s.model;
       }
 
-      // Load history from disk
       try {
         const cwd = s?.cwd || this.cwd;
         const res = await fetch(`/api/sessions/${id}/messages?cwd=${encodeURIComponent(cwd)}`);
         if (res.ok) {
-          const hist = await res.json();
-          const msgs = hist || [];
-          for (const m of msgs) {
-            if (m.uuid) this.seenUuids.add(m.uuid);
-          }
-          this.renderedHistory = msgs.map(m => this.renderMsgHtml(m)).join('');
+          const msgs = (await res.json()) || [];
+          for (const m of msgs) { if (m.uuid) this.seenUuids.add(m.uuid); }
+          this.msg('load', msgs);
         }
       } catch {}
 
-      // Connect SSE for live events (buffer replay for active sessions)
       this.connectSSE(id);
-      this.scrollBottom();
     },
 
     connectSSE(id) {
@@ -500,13 +412,9 @@ function app() {
       this.eventSource = es;
       es.addEventListener('message', (e) => {
         if (this.currentId !== id) { es.close(); return; }
-        try {
-          const msg = JSON.parse(e.data);
-          this.handleEvent(msg);
-        } catch {}
+        try { this.handleEvent(JSON.parse(e.data)); } catch {}
       });
       es.addEventListener('error', () => {
-        // Prevent auto-reconnect for stale/inactive sessions
         if (this.currentId !== id || !this.activeSet.has(id)) {
           es.close();
           if (this.eventSource === es) this.eventSource = null;
@@ -515,187 +423,40 @@ function app() {
     },
 
     handleEvent(msg) {
-      // Dedup finalized messages by UUID
       if (msg.uuid && msg.type !== 'stream_event') {
         if (this.seenUuids.has(msg.uuid)) {
-          // Already have this message from history — clear any streaming state
-          // that was building up for it
-          if (msg.type === 'assistant') {
-            this.streaming = { text: '', blocks: [], _toolName: '', _toolInput: '', _toolId: '' };
-          }
+          if (msg.type === 'assistant') this.msg('reset-stream');
           return;
         }
         this.seenUuids.add(msg.uuid);
       }
 
       if (msg.type === 'stream_event') {
-        this.handleStreamEvent(msg.event);
+        this.msg('stream', msg.event);
       } else if (msg.type === 'assistant') {
-        // Finalize: replace streaming with actual message
-        this.streaming = { text: '', blocks: [], _toolName: '', _toolInput: '', _toolId: '' };
-        this.liveMessages.push(msg);
+        this.msg('reset-stream');
+        this.msg('append', msg);
       } else if (msg.type === 'user') {
-        this.liveMessages.push(msg);
+        this.msg('append', msg);
       } else if (msg.type === 'result') {
         this.totalCost += msg.total_cost_usd || 0;
         this.totalIn += msg.usage?.input_tokens || 0;
         this.totalOut += msg.usage?.output_tokens || 0;
-        this.liveMessages.push(msg);
+        this.msg('append', msg);
       } else if (msg.type === 'system') {
-        // Skip init replay if we already have history loaded
         if (msg.subtype === 'init' && this.seenUuids.size > 0) return;
-        this.liveMessages.push(msg);
+        this.msg('append', msg);
       } else if (msg.type === 'status') {
         if (msg.status === 'idle') {
           this.activeSet.delete(this.currentId);
           this.activeSet = new Set(this.activeSet);
+          this.syncActive();
         }
       } else if (msg.type === 'error') {
-        this.liveMessages.push(msg);
+        this.msg('append', msg);
       }
-
-      this.scrollBottom();
     },
 
-    handleStreamEvent(event) {
-      if (!event) return;
-
-      if (event.type === 'content_block_start') {
-        const cb = event.content_block;
-        if (cb?.type === 'text') {
-          // Flush any existing text
-          if (this.streaming.text) {
-            this.streaming.blocks.push({ type: 'text', text: this.streaming.text });
-            this.streaming.text = '';
-          }
-        } else if (cb?.type === 'tool_use') {
-          if (this.streaming.text) {
-            this.streaming.blocks.push({ type: 'text', text: this.streaming.text });
-            this.streaming.text = '';
-          }
-          this.streaming._toolName = cb.name;
-          this.streaming._toolInput = '';
-          this.streaming._toolId = cb.id;
-        }
-      } else if (event.type === 'content_block_delta') {
-        const d = event.delta;
-        if (d?.type === 'text_delta') {
-          this.streaming.text += d.text;
-        } else if (d?.type === 'input_json_delta') {
-          this.streaming._toolInput += d.partial_json;
-        }
-      } else if (event.type === 'content_block_stop') {
-        if (this.streaming._toolName) {
-          let input = {};
-          try { input = JSON.parse(this.streaming._toolInput || '{}'); } catch {}
-          this.streaming.blocks.push({
-            type: 'tool_use',
-            name: this.streaming._toolName,
-            input,
-            id: this.streaming._toolId,
-          });
-          this.streaming._toolName = '';
-          this.streaming._toolInput = '';
-          this.streaming._toolId = '';
-        }
-      }
-
-      this.scrollBottom();
-    },
-
-    scrollBottom() {
-      this.$nextTick(() => {
-        const el = this.$refs.messageArea;
-        if (el) el.scrollTop = el.scrollHeight;
-      });
-    },
-
-    formatToolInput(input) {
-      if (!input) return '';
-      const s = JSON.stringify(input);
-      return s.length > 120 ? s.slice(0, 120) + '...' : s;
-    },
-
-    _mdCache: new Map(),
-
-    esc(text) {
-      if (!text) return '';
-      return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    },
-
-    renderMsgHtml(msg) {
-      if (msg.type === 'system' && msg.subtype === 'init') {
-        return `<div class="text-gray-600 text-xs py-1 border-b border-gray-800/50 mb-2">Session ${this.esc(msg.session_id?.slice(0,8))} | model: ${this.esc(msg.model)} | cwd: ${this.esc(msg.cwd)} | tools: ${msg.tools?.length || 0}</div>`;
-      }
-      if (msg.type === 'user') {
-        const content = msg.message?.content;
-        if (typeof content === 'string') {
-          return `<div class="py-0.5"><div class="text-green-400 whitespace-pre-wrap"><span class="text-green-600/70">~ </span>${this.esc(content)}</div></div>`;
-        }
-        if (!Array.isArray(content)) return '';
-        let html = '<div class="py-0.5">';
-        for (const block of content) {
-          if (block.type === 'text') {
-            html += `<div class="text-green-400 whitespace-pre-wrap"><span class="text-green-600/70">~ </span>${this.esc(block.text)}</div>`;
-          } else if (block.type === 'tool_result') {
-            html += '<div class="ml-4 text-xs border-l border-gray-800 pl-2 max-h-40 overflow-y-auto text-gray-500">';
-            if (Array.isArray(block.content)) {
-              for (const c of block.content) {
-                html += `<div class="whitespace-pre-wrap">${this.esc(c.text || c.type)}</div>`;
-              }
-            } else if (typeof block.content === 'string') {
-              const truncated = block.content.length > 2000 ? block.content.slice(0, 2000) + '...' : block.content;
-              html += `<div class="whitespace-pre-wrap">${this.esc(truncated)}</div>`;
-            }
-            if (block.is_error) html += '<span class="text-red-400">(error)</span>';
-            html += '</div>';
-          }
-        }
-        html += '</div>';
-        return html;
-      }
-      if (msg.type === 'assistant') {
-        const content = msg.message?.content;
-        if (!Array.isArray(content)) return '';
-        let html = '<div class="py-0.5">';
-        for (const block of content) {
-          if (block.type === 'text') {
-            html += `<div class="text-gray-200 md-content">${this.renderMd(block.text)}</div>`;
-          } else if (block.type === 'tool_use') {
-            html += `<div class="text-yellow-400/80 text-xs mt-1"><span class="font-semibold">[${this.esc(block.name)}]</span> <span class="text-gray-600 ml-1">${this.esc(this.formatToolInput(block.input))}</span></div>`;
-          }
-        }
-        html += '</div>';
-        return html;
-      }
-      if (msg.type === 'result') {
-        const cls = msg.subtype === 'success' ? 'text-cyan-400/70' : 'text-red-400/70';
-        return `<div class="text-xs py-1.5 mt-2 border-t border-gray-800/50 ${cls}">${this.esc(msg.subtype)} | cost: $${(msg.total_cost_usd || 0).toFixed(4)} | turns: ${msg.num_turns} | in: ${msg.usage?.input_tokens || 0} out: ${msg.usage?.output_tokens || 0}</div>`;
-      }
-      if (msg.type === 'error') {
-        return `<div class="text-red-400 text-sm py-1">${this.esc(msg.error)}</div>`;
-      }
-      return '';
-    },
-
-    renderMd(text) {
-      if (!text) return '';
-      let html = this._mdCache.get(text);
-      if (html !== undefined) return html;
-      try {
-        html = marked.parse(text, { breaks: true });
-      } catch {
-        html = text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      }
-      this._mdCache.set(text, html);
-      if (this._mdCache.size > 500) {
-        const first = this._mdCache.keys().next().value;
-        this._mdCache.delete(first);
-      }
-      return html;
-    },
-
-    // Load modal
     async loadSessions() {
       this.showLoadModal = true;
       this.browseCwd = '';
@@ -708,19 +469,12 @@ function app() {
     async fetchBrowseSessions(append = false) {
       this.browseLoading = true;
       try {
-        const params = new URLSearchParams({
-          limit: String(this.browseLimit),
-          offset: String(this.browseOffset),
-        });
+        const params = new URLSearchParams({ limit: String(this.browseLimit), offset: String(this.browseOffset) });
         if (this.browseCwd) params.set('cwd', this.browseCwd);
         const res = await fetch(`/api/sessions?${params}`);
         const data = await res.json();
         this.browseHasMore = Array.isArray(data) && data.length >= this.browseLimit;
-        if (append) {
-          this.browseSessions = [...this.browseSessions, ...data];
-        } else {
-          this.browseSessions = data;
-        }
+        this.browseSessions = append ? [...this.browseSessions, ...data] : data;
       } catch {
         if (!append) this.browseSessions = [];
         this.browseHasMore = false;
@@ -748,7 +502,7 @@ function app() {
       this.saveManaged();
       if (this.currentId === id) {
         this.currentId = null;
-        this.messages = [];
+        this.msg('clear');
         if (this.eventSource) this.eventSource.close();
       }
     },

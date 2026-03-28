@@ -1,5 +1,20 @@
 # Agent Link - Changes
 
+## v0.3.0
+
+- Message rendering extracted to Alpine.js component (`renderer.js`)
+- Tool uses grouped per turn: all tools between user prompts merge into one "N tools" section
+- Tool output collapsible on the tool line itself (no separate nested output element)
+- Tool results inlined under their corresponding tool_use via `data-tool-id` matching
+- Tool-specific rendering: Bash (`$ cmd`), Read/Write/Edit (file path), Grep/Glob (pattern), etc.
+- Collapsible groups: ≤5 tools open, >5 collapsed; short output auto-expands
+- Parent-child communication via window events (`msg:load`, `msg:append`, `msg:stream`, etc.)
+- Session switch performance: ~50-120ms for 38-200 messages (was ~1200ms)
+- Bun `idleTimeout` set to 120s to prevent SSE connection drops
+- Fixed EventSource auto-reconnect for stale sessions
+- Fixed horizontal scrollbar overflow in message area
+- Markdown render cache for repeated text blocks
+
 ## v0.2.0
 
 - Sidebar sessions grouped by cwd with collapsible expand/collapse
