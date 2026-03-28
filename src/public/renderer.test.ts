@@ -86,6 +86,50 @@ describe("renderer history rendering", () => {
     expect(rendered.innerHTML).toContain("Background command failed");
   });
 
+  test("renders task-notification in user message and keeps non-tag text escaped", () => {
+    const { instance, rendered } = createMessagesInstance();
+
+    instance.loadHistory([
+      {
+        type: "user",
+        message: {
+          content: `prefix <task-notification><summary>Failed task</summary></task-notification> <script>alert(1)</script>`,
+        },
+      },
+    ]);
+
+    expect(rendered.innerHTML).toContain("task-notification");
+    expect(rendered.innerHTML).toContain("Failed task");
+    expect(rendered.innerHTML).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(rendered.innerHTML).not.toContain("<task-notification>");
+  });
+
+  test("tool kinds keep semantic color classes", () => {
+    const { instance, rendered } = createMessagesInstance();
+
+    instance.loadHistory([
+      {
+        type: "assistant",
+        message: {
+          content: [
+            { type: "tool_use", id: "b1", name: "Bash", input: { command: "echo hi" } },
+            { type: "tool_use", id: "r1", name: "Read", input: { file_path: "/tmp/a" } },
+            { type: "tool_use", id: "w1", name: "Write", input: { file_path: "/tmp/b" } },
+            { type: "tool_use", id: "e1", name: "Edit", input: { file_path: "/tmp/c" } },
+            { type: "tool_use", id: "g1", name: "Grep", input: { pattern: "x", path: "." } },
+          ],
+        },
+      },
+      { type: "result", subtype: "success", total_cost_usd: 0, num_turns: 1, usage: { input_tokens: 0, output_tokens: 0 } },
+    ]);
+
+    expect(rendered.innerHTML).toContain("tool-kind-bash");
+    expect(rendered.innerHTML).toContain("tool-kind-read");
+    expect(rendered.innerHTML).toContain("tool-kind-write");
+    expect(rendered.innerHTML).toContain("tool-kind-edit");
+    expect(rendered.innerHTML).toContain("tool-kind-search");
+  });
+
   test("user and assistant rows use distinct classes and last process stays open", () => {
     const { instance, rendered } = createMessagesInstance();
 

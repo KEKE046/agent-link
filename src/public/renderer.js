@@ -3,6 +3,8 @@
 document.addEventListener('alpine:init', () => {
 
   const _mdCache = new Map();
+  const TASK_NOTE_BLOCK_RE = /(<div class="task-note">[\s\S]*?<\/div>)/g;
+  const TASK_NOTE_BLOCK_MATCH_RE = /^<div class="task-note">[\s\S]*<\/div>$/;
 
   function esc(text) {
     if (!text) return '';
@@ -33,9 +35,34 @@ document.addEventListener('alpine:init', () => {
     });
   }
 
+  function renderUserTextWithTaskNotifications(text) {
+    const rendered = renderTaskNotifications(text);
+    if (rendered === text) return esc(text);
+    return rendered
+      .split(TASK_NOTE_BLOCK_RE)
+      .map(part => TASK_NOTE_BLOCK_MATCH_RE.test(part) ? part : esc(part))
+      .join('');
+  }
+
+  function toolKindClass(name) {
+    switch (name) {
+      case 'Bash': return 'tool-kind-bash';
+      case 'Read': return 'tool-kind-read';
+      case 'Write': return 'tool-kind-write';
+      case 'Edit': return 'tool-kind-edit';
+      case 'Grep':
+      case 'Glob': return 'tool-kind-search';
+      case 'WebFetch':
+      case 'WebSearch': return 'tool-kind-web';
+      case 'Agent':
+      case 'Skill': return 'tool-kind-agent';
+      default: return 'tool-kind-default';
+    }
+  }
+
   function renderMessageText(text, role) {
     if (role === 'user') {
-      return `<div class="message-row message-user py-1"><div class="message-bubble user-bubble"><span class="message-prefix">~ </span>${esc(text)}</div></div>`;
+      return `<div class="message-row message-user py-1"><div class="message-bubble user-bubble"><span class="message-prefix">~ </span>${renderUserTextWithTaskNotifications(text)}</div></div>`;
     }
     return `<div class="message-row message-assistant py-1"><div class="message-bubble assistant-bubble md-content">${renderMd(renderTaskNotifications(text))}</div></div>`;
   }
@@ -58,36 +85,36 @@ document.addEventListener('alpine:init', () => {
         const lines = cmd.split('\n');
         const first = lines[0].length > 100 ? lines[0].slice(0, 100) + '...' : lines[0];
         const more = lines.length > 1 ? ` <span class="tool-meta">(+${lines.length - 1} lines)</span>` : '';
-        return `<span class="tool-kind font-semibold">$</span> <span class="tool-text">${e(first)}</span>${more}`;
+        return `<span class="tool-kind ${toolKindClass(name)} font-semibold">$</span> <span class="tool-text">${e(first)}</span>${more}`;
       }
       case 'Read':
-        return `<span class="tool-kind font-semibold">Read</span> <span class="tool-path">${e(input?.file_path || input?.filePath || '')}</span>`;
+        return `<span class="tool-kind ${toolKindClass(name)} font-semibold">Read</span> <span class="tool-path">${e(input?.file_path || input?.filePath || '')}</span>`;
       case 'Write':
-        return `<span class="tool-kind font-semibold">Write</span> <span class="tool-path">${e(input?.file_path || '')}</span>`;
+        return `<span class="tool-kind ${toolKindClass(name)} font-semibold">Write</span> <span class="tool-path">${e(input?.file_path || '')}</span>`;
       case 'Edit':
-        return `<span class="tool-kind font-semibold">Edit</span> <span class="tool-path">${e(input?.file_path || '')}</span>`;
+        return `<span class="tool-kind ${toolKindClass(name)} font-semibold">Edit</span> <span class="tool-path">${e(input?.file_path || '')}</span>`;
       case 'Grep':
-        return `<span class="tool-kind font-semibold">Grep</span> <span class="tool-text">/${e(input?.pattern || '')}/</span> <span class="tool-meta">in ${e(input?.path || '.')}</span>`;
+        return `<span class="tool-kind ${toolKindClass(name)} font-semibold">Grep</span> <span class="tool-text">/${e(input?.pattern || '')}/</span> <span class="tool-meta">in ${e(input?.path || '.')}</span>`;
       case 'Glob':
-        return `<span class="tool-kind font-semibold">Glob</span> <span class="tool-text">${e(input?.pattern || '')}</span>`;
+        return `<span class="tool-kind ${toolKindClass(name)} font-semibold">Glob</span> <span class="tool-text">${e(input?.pattern || '')}</span>`;
       case 'ToolSearch':
-        return `<span class="tool-kind font-semibold">ToolSearch</span> <span class="tool-path">${e(input?.query || '')}</span>`;
+        return `<span class="tool-kind tool-kind-search font-semibold">ToolSearch</span> <span class="tool-path">${e(input?.query || '')}</span>`;
       case 'WebFetch': {
         const url = input?.url || '';
-        return `<span class="tool-kind font-semibold">Fetch</span> <span class="tool-path">${e(url.length > 60 ? url.slice(0, 60) + '...' : url)}</span>`;
+        return `<span class="tool-kind ${toolKindClass(name)} font-semibold">Fetch</span> <span class="tool-path">${e(url.length > 60 ? url.slice(0, 60) + '...' : url)}</span>`;
       }
       case 'WebSearch':
-        return `<span class="tool-kind font-semibold">Search</span> <span class="tool-text">"${e(input?.query || '')}"</span>`;
+        return `<span class="tool-kind ${toolKindClass(name)} font-semibold">Search</span> <span class="tool-text">"${e(input?.query || '')}"</span>`;
       case 'Agent': {
         const p = input?.prompt || '';
-        return `<span class="tool-kind font-semibold">Agent</span> <span class="tool-path">${e(p.length > 80 ? p.slice(0, 80) + '...' : p)}</span>`;
+        return `<span class="tool-kind ${toolKindClass(name)} font-semibold">Agent</span> <span class="tool-path">${e(p.length > 80 ? p.slice(0, 80) + '...' : p)}</span>`;
       }
       case 'Skill':
-        return `<span class="tool-kind font-semibold">Skill</span> <span class="tool-text">${e(input?.skill || '')}</span>${input?.args ? ` <span class="tool-meta">${e(input.args)}</span>` : ''}`;
+        return `<span class="tool-kind ${toolKindClass(name)} font-semibold">Skill</span> <span class="tool-text">${e(input?.skill || '')}</span>${input?.args ? ` <span class="tool-meta">${e(input.args)}</span>` : ''}`;
       default: {
         const sn = name?.includes('__') ? name.split('__').pop() : name;
         const s = JSON.stringify(input || {});
-        return `<span class="tool-kind font-semibold">[${e(sn)}]</span> <span class="tool-meta">${e(s.length > 100 ? s.slice(0, 100) + '...' : s)}</span>`;
+        return `<span class="tool-kind ${toolKindClass(name)} font-semibold">[${e(sn)}]</span> <span class="tool-meta">${e(s.length > 100 ? s.slice(0, 100) + '...' : s)}</span>`;
       }
     }
   }
