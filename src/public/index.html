@@ -246,6 +246,7 @@
         <div x-show="vscodeLoading" class="text-gray-500">Loading...</div>
         <template x-if="!vscodeLoading && vscodeVersions.length > 0">
           <div class="space-y-3">
+            <label class="text-xs text-gray-400 block">Version</label>
             <select x-model="vscodeSelectedCommit" aria-label="Select VSCode server version" class="w-full bg-gray-800 text-gray-300 rounded px-2 py-2 text-sm outline-none">
               <template x-for="v in vscodeVersions" :key="v.commit">
                 <option :value="v.commit" x-text="`${v.version} (${v.commit.slice(0, 12)})`"></option>
@@ -261,6 +262,7 @@
           <div class="space-y-3">
             <div class="text-yellow-400">No installed VSCode server found.</div>
             <div class="text-xs text-gray-400 whitespace-pre-wrap" x-text="vscodeInstall?.prompt || ''"></div>
+            <label class="text-xs text-gray-400 block">Install command template</label>
             <textarea readonly aria-label="Installation command" class="w-full h-28 bg-gray-800 border border-gray-700 rounded p-2 text-xs mono text-gray-300" x-text="vscodeInstall?.command || ''"></textarea>
           </div>
         </template>
@@ -314,8 +316,7 @@ function app() {
       if (!this.cwd) this.cwd = window.location.hostname === 'localhost' ? '.' : '/';
       this.refreshActive();
       this.refreshVscodeActive();
-      setInterval(() => this.refreshActive(), 5000);
-      setInterval(() => this.refreshVscodeActive(), 5000);
+      setInterval(() => { this.refreshActive(); this.refreshVscodeActive(); }, 5000);
       this.$watch('cwd', (v) => localStorage.setItem('agent-link:cwd', v));
       this.$watch('model', (v) => localStorage.setItem('agent-link:model', v));
       this.$watch('sidebarCollapsed', (v) => localStorage.setItem('agent-link:sidebar-collapsed', String(v)));

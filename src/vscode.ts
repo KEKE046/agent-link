@@ -131,8 +131,8 @@ export async function startVscodeServer(
 ): Promise<VscodeServerSummary> {
   if (!cwd) throw new Error("cwd is required");
   if (!commit) throw new Error("commit is required");
-  if (!/^[a-f0-9]+$/i.test(commit)) {
-    throw new Error("commit must be a hex hash");
+  if (!/^[a-f0-9]{7,40}$/i.test(commit)) {
+    throw new Error("commit must be a 7-40 char hex hash");
   }
 
   const existing = byCwd.get(cwd);
@@ -217,6 +217,10 @@ export async function startVscodeServer(
   };
 }
 
+/**
+ * Build install-script guidance for the frontend.
+ * Returns script path, shell command template, and copy-paste prompt text.
+ */
 export function getInstallCommand(version?: string) {
   const scriptPath = "~/.agent-link/scripts/install-vscode-server.sh";
   const command = `mkdir -p ~/.agent-link/scripts && cat > ~/.agent-link/scripts/install-vscode-server.sh <<'EOF'

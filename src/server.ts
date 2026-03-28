@@ -50,6 +50,10 @@ function requestBodyForProxy(req: Request) {
     : req.body;
 }
 
+function isWebSocketUpgrade(req: Request): boolean {
+  return req.headers.get("upgrade")?.toLowerCase() === "websocket";
+}
+
 // API: Start new query or resume existing session
 app.post("/api/query", async (c) => {
   const { prompt, cwd, model, sessionId } = await c.req.json();
@@ -206,6 +210,10 @@ app.get("/", async (c) => {
 export default {
   port: 3456,
   idleTimeout: 120,
+  // Reverse proxy for /vscode/{encoded-cwd}/...
+  // - HTTP: forward to matching local serve-web port
+  // - HTML: rewrite remoteAuthority to current proxy authority so follow-up API/WS go through proxy
+  // - WS: upgrade client socket and bridge to upstream serve-web websocket
   fetch: async (req: Request, server: Bun.Server<ProxySocketData>) => {
     const url = new URL(req.url);
     if (url.pathname.startsWith("/vscode/")) {
@@ -218,7 +226,7 @@ export default {
       targetUrl.hostname = "127.0.0.1";
       targetUrl.port = String(active.port);
 
-      if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
+      if (isWebSocketUpgrade(req)) {
         const upstream = new WebSocket(targetUrl.toString().replace(/^http:/, "ws:"));
         try {
           await new Promise<void>((resolve, reject) => {
@@ -273,6 +281,8 @@ export default {
       }
       upstream.addEventListener("message", (event) => {
         const data = event.data;
+        // Upstream frames may be string, ArrayBuffer, Blob...
+        // Only forward types Bun websocket send accepts directly.
         if (
           typeof data === "string" ||
           data instanceof ArrayBuffer ||
@@ -280,6 +290,8 @@ export default {
         ) {
           ws.send(data);
         }
+        // Ignore Blob/other unsupported frame types because Bun server websocket send
+        // expects string/binary payloads only.
       });
       upstream.addEventListener("close", () => ws.close());
       upstream.addEventListener("error", () => ws.close());
