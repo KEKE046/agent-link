@@ -7,6 +7,7 @@ import {
   addManaged, listManaged, removeManaged,
   listFolders, addFolder, removeFolder, renameFolder,
 } from "./managed";
+import { verifyToken, verifyCookie, createSessionCookie, isEnabled as authEnabled } from "./auth";
 import assets from "./assets";
 
 const isDev = Bun.env.NODE_ENV === "development";
@@ -23,6 +24,50 @@ function getNodeId(c: any): string | undefined {
 
 export function createApp(router: Router): Hono {
   const app = new Hono();
+
+  // --- Auth: GET ?token= auto-login (redirect to /) ---
+
+  app.get("/login", async (c) => {
+    const token = c.req.query("token");
+    if (!token || !authEnabled() || !verifyToken(token)) {
+      return c.redirect("/");
+    }
+    const cookie = await createSessionCookie();
+    return new Response(null, {
+      status: 302,
+      headers: { Location: "/", "Set-Cookie": cookie },
+    });
+  });
+
+  // --- Auth API ---
+
+  app.post("/api/login", async (c) => {
+    if (!authEnabled()) return c.json({ ok: true });
+    const body = await c.req.json();
+    const token = typeof body?.token === "string" ? body.token : "";
+    if (!verifyToken(token)) return c.json({ error: "invalid token" }, 401);
+    const cookie = await createSessionCookie();
+    return new Response(JSON.stringify({ ok: true }), {
+      headers: { "Content-Type": "application/json", "Set-Cookie": cookie },
+    });
+  });
+
+  app.get("/api/auth/check", async (c) => {
+    if (!authEnabled()) return c.json({ authenticated: true, required: false });
+    const ok = await verifyCookie(c.req.header("cookie") ?? null);
+    return c.json({ authenticated: ok, required: true });
+  });
+
+  // --- Auth middleware (protect /api/* except login/check) ---
+
+  app.use("/api/*", async (c, next) => {
+    if (!authEnabled()) return next();
+    const path = c.req.path;
+    if (path === "/api/login" || path === "/api/auth/check") return next();
+    const ok = await verifyCookie(c.req.header("cookie") ?? null);
+    if (!ok) return c.json({ error: "unauthorized" }, 401);
+    return next();
+  });
 
   // --- Session APIs ---
 

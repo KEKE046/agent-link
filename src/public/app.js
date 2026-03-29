@@ -35,13 +35,22 @@ function app() {
     // Pending new session placeholder (shown in sidebar with yellow dot)
     pendingNew: null,  // {cwd, nodeId} or null
 
+    // Auth state
+    authRequired: false,
+    authenticated: true,
+    loginToken: '',
+    loginError: '',
+
     init() {
       Alpine.store('active', false);
       if (!this.cwd) this.cwd = window.location.hostname === 'localhost' ? '.' : '/';
       this.applyTheme();
-      this.detectPanelMode().then(() => { this.loadManaged(); this.loadFolders(); });
-      this.refreshActive();
-      setInterval(() => { this.refreshActive(); if (this.panelMode) this.refreshNodes(); }, 5000);
+      this.checkAuth().then(() => {
+        if (!this.authenticated) return;
+        this.detectPanelMode().then(() => { this.loadManaged(); this.loadFolders(); });
+        this.refreshActive();
+        setInterval(() => { this.refreshActive(); if (this.panelMode) this.refreshNodes(); }, 5000);
+      });
       this.$watch('cwd', (v) => localStorage.setItem('agent-link:cwd', v));
       this.$watch('model', (v) => localStorage.setItem('agent-link:model', v));
       this.$watch('sidebarCollapsed', (v) => localStorage.setItem('agent-link:sidebar-collapsed', String(v)));
@@ -57,6 +66,37 @@ function app() {
     toggleTheme() { this.theme = this.theme === 'light' ? 'dark' : 'light'; },
     toggleSidebar() { this.sidebarCollapsed = !this.sidebarCollapsed; },
     clampWidth(w) { return Math.min(480, Math.max(180, Number.isFinite(w) ? w : 256)); },
+
+    async checkAuth() {
+      try {
+        const res = await fetch('/api/auth/check');
+        const data = await res.json();
+        this.authRequired = data.required;
+        this.authenticated = data.authenticated;
+      } catch {
+        this.authenticated = true;
+        this.authRequired = false;
+      }
+    },
+
+    async login() {
+      this.loginError = '';
+      try {
+        const res = await fetch('/api/login', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: this.loginToken }),
+        });
+        const data = await res.json();
+        if (data.error) { this.loginError = data.error; return; }
+        this.authenticated = true;
+        this.loginToken = '';
+        this.detectPanelMode().then(() => { this.loadManaged(); this.loadFolders(); });
+        this.refreshActive();
+        setInterval(() => { this.refreshActive(); if (this.panelMode) this.refreshNodes(); }, 5000);
+      } catch (err) {
+        this.loginError = err.message;
+      }
+    },
 
     async detectPanelMode() {
       try {

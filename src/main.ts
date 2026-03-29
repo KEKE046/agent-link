@@ -8,6 +8,7 @@
 //   agent-link --connect-to <url>        → node only (connect to remote panel)
 
 import { getMachineId } from "./identity";
+import { initAuth, verifyCookie, isEnabled as authEnabled } from "./auth";
 import { Router } from "./router";
 import { createApp } from "./routes";
 import { getActiveServerById } from "./vscode";
@@ -22,6 +23,8 @@ if (args.includes("--help") || args.includes("-h")) {
   --no-local          Don't run local Claude SDK (router-only, requires --accept-nodes)
   --connect-to <url>  Run as node, connect to remote panel
   --name <name>       Node display name (default: machine ID)
+  --token <value>     Admin token for panel auth (auto-generated if omitted)
+  --no-auth           Disable auth even in panel mode (for testing)
   --help              Show this help`);
   process.exit(0);
 }
@@ -30,6 +33,8 @@ const acceptNodes = args.includes("--accept-nodes");
 const noLocal = args.includes("--no-local");
 const connectTo = getArg("--connect-to");
 const port = parseInt(getArg("--port") || "3456");
+const tokenArg = getArg("--token");
+const noAuth = args.includes("--no-auth");
 
 function getArg(flag: string): string | undefined {
   const i = args.indexOf(flag);
@@ -55,6 +60,13 @@ if (connectTo) {
   // ---- Server mode ----
   const localId = noLocal ? null : getMachineId();
   const router = new Router(localId);
+
+  // Enable auth in panel mode (accept-nodes), unless --no-auth
+  if (acceptNodes && !noAuth) {
+    const token = initAuth(tokenArg);
+    console.log(`[server] Admin token: ${token}`);
+    console.log(`[server] Login URL: http://localhost:${port}/login?token=${token}`);
+  }
 
   // Conditionally load panel modules
   let panelNodes: typeof import("./panel/nodes") | null = null;
@@ -135,8 +147,11 @@ if (connectTo) {
         return new Response("WebSocket upgrade failed", { status: 500 });
       }
 
-      // VSCode reverse proxy
+      // VSCode reverse proxy (auth-protected when enabled)
       if (url.pathname.startsWith("/vscode/")) {
+        if (authEnabled() && !(await verifyCookie(req.headers.get("cookie")))) {
+          return new Response("Unauthorized", { status: 401 });
+        }
         if (acceptNodes && panelNodes && panelTunnel) {
           return handleVscodeMultiNode(req, server, url, panelNodes, panelTunnel, router);
         }
