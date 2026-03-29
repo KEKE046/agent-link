@@ -17,7 +17,9 @@ Authentication is automatic: \`agent-link\` reads \`~/.agent-link/auth.json\` wi
 \`\`\`sh
 agent-link status                    # server info, nodes, active sessions
 agent-link list                      # table of all managed agents
-agent-link inspect <name|id>         # full details of one agent
+agent-link inspect <name|id>         # details + last message (default)
+agent-link inspect <name|id> -n 5   # details + last 5 messages
+agent-link inspect <name|id> -n 0   # details only, no messages
 agent-link send <name|id> <message>  # send message, stream response to stdout
 \`\`\`
 
@@ -59,13 +61,17 @@ ACT  NODE       NAME         BIO
 ## Inspecting an Agent
 
 \`\`\`sh
-agent-link inspect CodeHelper
+agent-link inspect CodeHelper         # details + last message
+agent-link inspect CodeHelper -n 5    # details + last 5 messages
+agent-link inspect CodeHelper -n 0    # details only
 # Name:    CodeHelper
 # Bio:     Backend refactoring agent
 # Session: 46fdcf5b-...
 # Node:    (local)
 # CWD:     /home/user/project
 # Active:  no
+# ── last message ────────────────────────
+# [asst]  The refactor is complete. 3 files changed.
 \`\`\`
 
 Use the session ID to reference the exact agent when name collisions exist.

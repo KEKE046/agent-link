@@ -18,10 +18,17 @@ export function getArg(args: string[], flag: string): string | undefined {
 export function positionalArgs(args: string[]): string[] {
   const result: string[] = [];
   for (let i = 0; i < args.length; i++) {
-    if (args[i].startsWith("--")) { i++; continue; }
-    result.push(args[i]);
+    const a = args[i];
+    if (a.startsWith("--")) { i++; continue; }
+    if ((a === "-n") && i + 1 < args.length) { i++; continue; }
+    if (!a.startsWith("-")) result.push(a);
   }
   return result;
+}
+
+export function getShortArg(args: string[], flag: string): string | undefined {
+  const i = args.indexOf(flag);
+  return i >= 0 && args[i + 1] !== undefined ? args[i + 1] : undefined;
 }
 
 // Read token from AGENT_LINK_HOME store (same file the server writes via initAuth)

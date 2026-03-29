@@ -69,7 +69,7 @@ if (subcommand === "help" || subArgs.includes("--help") || subArgs.includes("-h"
   agent-link node <url> [options]           Connect to a panel server as a node
   agent-link status [--url <url>]           Show status of running server
   agent-link list   [--url <url>]           List managed agents in a table
-  agent-link inspect <name|id>... [--url]   Inspect agent details
+  agent-link inspect <name|id>... [-n N] [--url]  Inspect agent details + last N messages (default: 1)
   agent-link send <name|id> <msg> [--url]   Send message to an agent
   agent-link skill                          Print agent-link skill/cheatsheet
 
