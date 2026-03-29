@@ -183,11 +183,6 @@
          @keydown="handleResizeKeydown($event)" tabindex="0"
          role="separator" aria-orientation="vertical" aria-label="Resize sidebar"
          class="w-1 bg-gray-800 hover:bg-gray-700 active:bg-gray-700 cursor-col-resize flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"></div>
-    <!-- Expand tab when sidebar is collapsed -->
-    <button x-show="sidebarCollapsed" @click="toggleSidebar()"
-            class="w-4 border-r border-gray-800 flex items-center justify-center hover:bg-gray-800/50 text-gray-700 hover:text-gray-300 cursor-pointer flex-shrink-0"
-            title="Expand sidebar">›</button>
-
     <!-- Fixed dropdown: node ... menu -->
     <template x-if="nodeMenu">
       <div @click.outside="nodeMenu = null"
