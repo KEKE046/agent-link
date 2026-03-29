@@ -12,6 +12,7 @@ import { initAuth, verifyCookie, isEnabled as authEnabled } from "./auth";
 import { Router } from "./router";
 import { createApp } from "./routes";
 import { getActiveServerById } from "./vscode";
+import * as logger from "./logger";
 
 const args = process.argv.slice(2);
 
@@ -36,14 +37,17 @@ const connectTo = getArg("--connect-to");
 const port = parseInt(getArg("--port") || "3456");
 const tokenArg = getArg("--token");
 const noAuth = args.includes("--no-auth");
+const debug = args.includes("--debug");
 
 function getArg(flag: string): string | undefined {
   const i = args.indexOf(flag);
   return i >= 0 ? args[i + 1] : undefined;
 }
 
+logger.initLogger({ debug });
+
 if (noLocal && !acceptNodes && !connectTo) {
-  console.error("Error: --no-local requires --accept-nodes");
+  logger.error("main", "--no-local requires --accept-nodes");
   process.exit(1);
 }
 
@@ -52,9 +56,9 @@ if (connectTo) {
   const nameArg = getArg("--name") || Bun.env.NODE_LABEL;
   const machineId = nameArg ? `${getMachineId()}-${nameArg}` : getMachineId();
   const label = nameArg || machineId;
-  console.log(`[node] Machine ID: ${machineId}`);
-  console.log(`[node] Name: ${label}`);
-  console.log(`[node] Connecting to: ${connectTo}`);
+  logger.log("node", `Machine ID: ${machineId}`);
+  logger.log("node", `Name: ${label}`);
+  logger.log("node", `Connecting to: ${connectTo}`);
 
   const { connect } = await import("./node/connector");
   connect(connectTo, machineId, label);
@@ -71,8 +75,8 @@ if (connectTo) {
   // Enable auth in panel mode (accept-nodes), unless --no-auth
   if (acceptNodes && !noAuth) {
     const token = initAuth(tokenArg);
-    console.log(`[server] Admin token: ${token}`);
-    console.log(`[server] Login URL: http://localhost:${port}/login?token=${token}`);
+    logger.log("server", `Admin token: ${token}`);
+    logger.log("server", `Login URL: http://localhost:${port}/login?token=${token}`);
   }
 
   // Conditionally load panel modules
@@ -97,9 +101,9 @@ if (connectTo) {
   const app = createApp(router);
 
   const mode = noLocal ? "router-only" : acceptNodes ? "local + remote" : "standalone";
-  console.log(`[server] Mode: ${mode}`);
-  if (localId) console.log(`[server] Machine ID: ${localId}`);
-  console.log(`[server] Listening on port ${port}`);
+  logger.log("server", `Mode: ${mode}`);
+  if (localId) logger.log("server", `Machine ID: ${localId}`);
+  logger.log("server", `Listening on port ${port}`);
 
   // --- VSCode reverse proxy helpers ---
 

@@ -2,6 +2,8 @@
 // Each sub-node gets a dedicated WS to the panel, messages piped bidirectionally.
 // No protocol changes: the panel sees each sub-node as a direct connection.
 
+import * as logger from "../logger";
+
 interface RelaySocket {
   upstream: WebSocket | null;
   buffer: (string | ArrayBuffer)[];
@@ -33,6 +35,7 @@ export function startRelay(panelUrl: string, port: number) {
             upstream.send(msg);
           }
           ws.data.buffer = [];
+          logger.debug("relay", `Upstream connected for sub-node`);
         });
 
         upstream.addEventListener("message", (e: MessageEvent) => {
@@ -71,5 +74,5 @@ export function startRelay(panelUrl: string, port: number) {
     },
   });
 
-  console.log(`[relay] Accepting sub-nodes on port ${port}, forwarding to ${panelUrl}`);
+  logger.log("relay", `Accepting sub-nodes on port ${port}, forwarding to ${panelUrl}`);
 }

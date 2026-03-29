@@ -1,5 +1,6 @@
 import { getClaudeSdk, type Query } from "./claude-sdk";
 import type { ClaudeParams } from "./managed";
+import * as logger from "./logger";
 
 type Listener = (msg: any) => void;
 
@@ -88,6 +89,7 @@ export async function startQuery(
 
   const q = getClaudeSdk().query({ prompt, options: queryOpts });
   let resolvedId = opts.sessionId || "";
+  logger.debug("session", `Starting query${opts.sessionId ? ` (resume: ${opts.sessionId})` : " (new)"} cwd=${opts.cwd}`);
 
   if (opts.sessionId) {
     active.set(opts.sessionId, {
@@ -97,11 +99,14 @@ export async function startQuery(
     });
   }
 
+  let earlyError: Error | null = null;
+
   const run = async () => {
     try {
       for await (const msg of q) {
         if (!resolvedId && msg.type === "system" && msg.subtype === "init") {
           resolvedId = msg.session_id;
+          logger.debug("session", `Init: ${resolvedId}`);
           active.set(resolvedId, {
             query: q,
             cwd: opts.cwd,
@@ -113,6 +118,11 @@ export async function startQuery(
     } catch (err: any) {
       if (resolvedId) {
         broadcast(resolvedId, { type: "error", error: err.message });
+        logger.error("session", `Session ${resolvedId} error: ${err.message}`);
+      } else {
+        // Error before init — propagate to startQuery promise
+        logger.error("session", `Pre-init error: ${err.message}`);
+        earlyError = err instanceof Error ? err : new Error(String(err));
       }
     } finally {
       if (resolvedId) active.delete(resolvedId);
@@ -133,9 +143,9 @@ export async function startQuery(
       );
       const i = setInterval(() => {
         if (resolvedId) {
-          clearInterval(i);
-          clearTimeout(t);
-          resolve();
+          clearInterval(i); clearTimeout(t); resolve();
+        } else if (earlyError) {
+          clearInterval(i); clearTimeout(t); reject(earlyError);
         }
       }, 50);
     });
