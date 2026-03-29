@@ -194,14 +194,7 @@ function app() {
       this.newSession();
       this.msg('append', { type: 'user', message: { content: [{ type: 'text', text: prompt }] } });
 
-      // Build claudeParams, injecting AGENT_LINK_AGENT_NAME if not already set
-      let claudeParams = params?.claude ? { ...params.claude } : undefined;
-      if (name) {
-        claudeParams = claudeParams || {};
-        if (!claudeParams.env?.AGENT_LINK_AGENT_NAME) {
-          claudeParams.env = { AGENT_LINK_AGENT_NAME: name, ...(claudeParams.env || {}) };
-        }
-      }
+      const claudeParams = params?.claude || undefined;
       try {
         const body = {
           prompt, cwd: cwd || this.cwd,
@@ -332,14 +325,7 @@ function app() {
       this.msg('append', { type: 'user', message: { content: [{ type: 'text', text: prompt }] } });
 
       const s = this.managed.find(s => s.sessionId === this.currentId);
-      let claudeParams = s?.params?.claude ? { ...s.params.claude } : undefined;
-      // Auto-inject agent name into env if not already set
-      if (s?.name) {
-        claudeParams = claudeParams || {};
-        if (!claudeParams.env?.AGENT_LINK_AGENT_NAME) {
-          claudeParams.env = { AGENT_LINK_AGENT_NAME: s.name, ...(claudeParams.env || {}) };
-        }
-      }
+      const claudeParams = s?.params?.claude || undefined;
       try {
         const body = {
           prompt, sessionId: this.currentId,

@@ -80,10 +80,23 @@ export function createApp(router: Router): Hono {
     const body = await c.req.json();
     const nodeId = body.nodeId || getNodeId(c) || router.localId;
     if (!nodeId) return c.json({ error: "nodeId required" }, 400);
+
+    // Server-side injection: set AGENT_LINK_AGENT_NAME from managed session
+    let claudeParams = body.claudeParams;
+    if (body.sessionId) {
+      const session = listManaged().find((s) => s.id === body.sessionId);
+      if (session?.name && !claudeParams?.env?.AGENT_LINK_AGENT_NAME) {
+        claudeParams = {
+          ...(claudeParams || {}),
+          env: { AGENT_LINK_AGENT_NAME: session.name, ...(claudeParams?.env || {}) },
+        };
+      }
+    }
+
     try {
       return c.json(await router.dispatch(nodeId, "query", {
         prompt: body.prompt, cwd: body.cwd, model: body.model, sessionId: body.sessionId,
-        claudeParams: body.claudeParams,
+        claudeParams,
       }));
     } catch (err: any) {
       return c.json({ error: err.message }, 500);

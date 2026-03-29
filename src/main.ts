@@ -137,6 +137,11 @@ if (noLocal && !acceptNodes && !connectTo) {
   process.exit(1);
 }
 
+if (isNodeSubcommand && !connectTo) {
+  logger.error("main", "Usage: agent-link node <panel-url> [options]");
+  process.exit(1);
+}
+
 if (connectTo) {
   // ---- Node mode ----
   const nameArg = getArg(subArgs, "--name") || Bun.env.NODE_LABEL;

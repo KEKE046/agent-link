@@ -5,7 +5,6 @@ export async function runSend(args: string[]) {
   const pos = positionalArgs(args);
 
   // Usage: agent-link send <name|id> <message...>
-  // Or with AGENT_LINK_TARGET set: agent-link send <message...>
   let targetQuery: string;
   let messageParts: string[];
 
@@ -39,7 +38,17 @@ export async function runSend(args: string[]) {
   console.log(message);
   console.log();
 
-  // Send the query
+  // Subscribe to SSE BEFORE posting query to avoid missing the idle event
+  // (session may complete before the SSE connection opens if POST is awaited first)
+  const sseRes = await authFetch(`${url}/api/events/${agent.id}`, {
+    headers: { Accept: "text/event-stream" },
+  });
+  if (!sseRes.ok || !sseRes.body) {
+    console.error("Failed to connect to event stream");
+    process.exit(1);
+  }
+
+  // Now send the query
   const body: any = {
     prompt: message,
     sessionId: agent.id,
@@ -59,17 +68,7 @@ export async function runSend(args: string[]) {
     process.exit(1);
   }
 
-  // Stream SSE events until idle
-  const res = await authFetch(`${url}/api/events/${agent.id}`, {
-    headers: { Accept: "text/event-stream" },
-  });
-
-  if (!res.ok || !res.body) {
-    console.error("Failed to connect to event stream");
-    process.exit(1);
-  }
-
-  const reader = res.body.getReader();
+  const reader = sseRes.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let inAssistantBlock = false;

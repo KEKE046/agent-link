@@ -9,6 +9,12 @@ const INTRO_PROMPT =
   "Reply with ONLY the introduction, no preamble or headers.";
 
 async function queryAndCollect(url: string, agent: any, prompt: string): Promise<string> {
+  // Subscribe to SSE BEFORE posting query to avoid missing the idle event
+  const sseRes = await authFetch(`${url}/api/events/${agent.id}`, {
+    headers: { Accept: "text/event-stream" },
+  });
+  if (!sseRes.ok || !sseRes.body) throw new Error("Failed to connect to event stream");
+
   const body: any = {
     prompt,
     sessionId: agent.id,
@@ -23,12 +29,7 @@ async function queryAndCollect(url: string, agent: any, prompt: string): Promise
     body: JSON.stringify(body),
   });
 
-  const res = await authFetch(`${url}/api/events/${agent.id}`, {
-    headers: { Accept: "text/event-stream" },
-  });
-  if (!res.ok || !res.body) throw new Error("Failed to connect to event stream");
-
-  const reader = res.body.getReader();
+  const reader = sseRes.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   const chunks: string[] = [];
