@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Link — Brand</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --brand:     #09E0A5;
+  --brand-dim: rgba(9, 224, 165, 0.12);
+  --brand-lt:  #00A87A;
+  --ink:       #07090C;
+  --ink2:      #0D1319;
+  --ink3:      #16212E;
+  --ink4:      #1F2F40;
+  --muted:     #3A5068;
+  --fog:       #5A7890;
+  --paper:     #F0F4F7;
+  --paper2:    #E1E8EE;
+  --white:     #FFFFFF;
+  --mono: 'IBM Plex Mono', 'Courier New', monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--ink);
+  color: var(--white);
+  font-family: var(--mono);
+  min-height: 100vh;
+}
+
+/* dot-grid background */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: radial-gradient(circle, #1a2a38 1px, transparent 1px);
+  background-size: 28px 28px;
+  opacity: 0.5;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.wrap {
+  position: relative;
+  z-index: 1;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 64px 48px 120px;
+}
+
+/* ── page header ── */
+.pg-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 80px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--ink3);
+}
+.pg-head-l { display: flex; flex-direction: column; gap: 5px; }
+.pg-head-l h1 {
+  font-size: 11px; font-weight: 300;
+  letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--fog);
+}
+.pg-head-l p {
+  font-size: 10px; font-weight: 300;
+  letter-spacing: 0.08em; color: var(--muted);
+}
+.pg-head-r {
+  font-size: 10px; font-weight: 300;
+  letter-spacing: 0.15em; color: var(--muted);
+}
+
+/* ── hero ── */
+.hero {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 72px 0 96px;
+  gap: 28px;
+}
+.hero-icon { position: relative; }
+.hero-glow {
+  position: absolute;
+  inset: -24px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(9,224,165,0.18) 0%, transparent 70%);
+  animation: pulse 3.2s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50%       { opacity: 1;   transform: scale(1.15); }
+}
+.hero-wm { display: flex; flex-direction: column; line-height: 1; }
+.hero-wm .wm-agent {
+  font-size: 14px; font-weight: 300;
+  letter-spacing: 0.38em; text-transform: uppercase;
+  color: rgba(9, 224, 165, 0.5);
+}
+.hero-wm .wm-link {
+  font-size: 56px; font-weight: 700;
+  letter-spacing: 0.03em; text-transform: uppercase;
+  color: #ffffff;
+  line-height: 1.0;
+}
+
+/* ── section ── */
+.section { margin-bottom: 68px; }
+.section-head {
+  display: flex; align-items: center; gap: 14px;
+  margin-bottom: 32px;
+}
+.section-head span {
+  font-size: 9px; font-weight: 300;
+  letter-spacing: 0.3em; text-transform: uppercase;
+  color: var(--muted); white-space: nowrap;
+}
+.section-head::after {
+  content: ''; flex: 1; height: 1px;
+  background: var(--ink3);
+}
+
+/* ── variant row ── */
+.vrow { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-start; }
+.vcell {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 10px;
+}
+.vlabel {
+  font-size: 8.5px; font-weight: 300;
+  letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ── bg panels ── */
+.bg-dark {
+  background: var(--ink2);
+  border: 1px solid var(--ink3);
+  border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+}
+.bg-light {
+  background: var(--paper);
+  border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* ── lockups ── */
+.lk-h { display: flex; align-items: center; gap: 16px; }
+.lk-v { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+
+.wm { display: flex; flex-direction: column; line-height: 1; }
+.wm .wm-agent {
+  font-weight: 300; font-size: 10px;
+  letter-spacing: 0.34em; text-transform: uppercase;
+}
+.wm .wm-link {
+  font-weight: 700; font-size: 24px;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  line-height: 1.05;
+}
+
+/* color contexts */
+.ctx-dk       .wm-agent { color: rgba(255,255,255,0.35); }
+.ctx-dk       .wm-link  { color: #ffffff; }
+.ctx-dk-brand .wm-agent { color: rgba(9,224,165,0.5); }
+.ctx-dk-brand .wm-link  { color: #09E0A5; }
+.ctx-lt       .wm-agent { color: rgba(7,9,12,0.38); }
+.ctx-lt       .wm-link  { color: #07090C; }
+.ctx-lt-brand .wm-agent { color: rgba(0,168,122,0.55); }
+.ctx-lt-brand .wm-link  { color: #00A87A; }
+
+.lk-v .wm { align-items: center; text-align: center; }
+
+/* ── divider ── */
+.divider { width: 16px; }
+
+/* ── palette ── */
+.palette { display: flex; gap: 10px; flex-wrap: wrap; }
+.swatch { display: flex; flex-direction: column; gap: 7px; }
+.swatch-chip {
+  width: 56px; height: 36px;
+  border-radius: 3px;
+}
+.swatch-info {
+  font-size: 8px; font-weight: 300;
+  letter-spacing: 0.08em; color: var(--fog);
+  line-height: 1.7;
+}
+
+/* ── usage note ── */
+.note {
+  margin-top: 20px;
+  font-size: 9px; font-weight: 300;
+  letter-spacing: 0.1em; color: var(--muted);
+  line-height: 1.9;
+}
+.note strong { color: var(--fog); font-weight: 400; }
+
+/* animated connection lines on hero */
+@keyframes trace-a {
+  0%   { stroke-dashoffset: 30; opacity: 0.3; }
+  50%  { stroke-dashoffset: 0;  opacity: 0.7; }
+  100% { stroke-dashoffset: 30; opacity: 0.3; }
+}
+.line-animated-a { animation: trace-a 2.8s ease-in-out infinite; }
+.line-animated-b { animation: trace-a 2.8s ease-in-out 1.4s infinite; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- page header -->
+  <div class="pg-head">
+    <div class="pg-head-l">
+      <h1>Agent Link — Brand Identity</h1>
+      <p>Icon mark · Lockups · Color system</p>
+    </div>
+    <span class="pg-head-r">v1.0 · 2025</span>
+  </div>
+
+  <!-- ═══ HERO ═══ -->
+  <div class="hero">
+    <div class="hero-icon">
+      <div class="hero-glow"></div>
+      <!-- 160px hero mark -->
+      <svg width="128" height="128" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- Panel node: double-ring + center dot, at (20,40) -->
+        <circle cx="20" cy="40" r="13"  stroke="#09E0A5" stroke-width="1.4"/>
+        <circle cx="20" cy="40" r="7.5" stroke="#09E0A5" stroke-width="1.4"/>
+        <circle cx="20" cy="40" r="3"   fill="#09E0A5"/>
+        <!-- Node A: top-right (60,18) -->
+        <circle cx="60" cy="18" r="7.5" stroke="#09E0A5" stroke-width="1.4"/>
+        <circle cx="60" cy="18" r="2.5" fill="#09E0A5"/>
+        <!-- Node B: bottom-right (60,62) -->
+        <circle cx="60" cy="62" r="7.5" stroke="#09E0A5" stroke-width="1.4"/>
+        <circle cx="60" cy="62" r="2.5" fill="#09E0A5"/>
+        <!-- Connection Panel→NodeA (edge to edge, computed precisely) -->
+        <line x1="31.4" y1="33.7" x2="53.4" y2="21.6"
+              stroke="#09E0A5" stroke-width="1"
+              stroke-dasharray="30"
+              class="line-animated-a"/>
+        <!-- Connection Panel→NodeB -->
+        <line x1="31.4" y1="46.3" x2="53.4" y2="58.4"
+              stroke="#09E0A5" stroke-width="1"
+              stroke-dasharray="30"
+              class="line-animated-b"/>
+      </svg>
+    </div>
+    <div class="hero-wm">
+      <span class="wm-agent">Agent</span>
+      <span class="wm-link">Link</span>
+    </div>
+  </div>
+
+  <!-- ═══ ICON MARK ═══ -->
+  <div class="section">
+    <div class="section-head"><span>Icon mark</span></div>
+    <div class="vrow">
+
+      <!-- 80px brand on dark -->
+      <div class="vcell">
+        <div class="bg-dark" style="padding:24px;">
+          <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+            <circle cx="20" cy="40" r="13"  stroke="#09E0A5" stroke-width="1.5"/>
+            <circle cx="20" cy="40" r="7.5" stroke="#09E0A5" stroke-width="1.5"/>
+            <circle cx="20" cy="40" r="3"   fill="#09E0A5"/>
+            <circle cx="60" cy="18" r="7.5" stroke="#09E0A5" stroke-width="1.5"/>
+            <circle cx="60" cy="18" r="2.5" fill="#09E0A5"/>
+            <circle cx="60" cy="62" r="7.5" stroke="#09E0A5" stroke-width="1.5"/>
+            <circle cx="60" cy="62" r="2.5" fill="#09E0A5"/>
+            <line x1="31.4" y1="33.7" x2="53.4" y2="21.6" stroke="#09E0A5" stroke-width="1" stroke-opacity="0.5"/>
+            <line x1="31.4" y1="46.3" x2="53.4" y2="58.4" stroke="#09E0A5" stroke-width="1" stroke-opacity="0.5"/>
+          </svg>
+        </div>
+        <span class="vlabel">80px · brand</span>
+      </div>
+
+      <!-- 48px -->
+      <div class="vcell">
+        <div class="bg-dark" style="padding:20px;">
+          <svg width="48" height="48" viewBox="0 0 80 80" fill="none">
+            <circle cx="20" cy="40" r="13"  stroke="#09E0A5" stroke-width="2"/>
+            <circle cx="20" cy="40" r="7.5" stroke="#09E0A5" stroke-width="2"/>
+            <circle cx="20" cy="40" r="3"   fill="#09E0A5"/>
+            <circle cx="60" cy="18" r="7.5" stroke="#09E0A5" stroke-width="2"/>
+            <circle cx="60" cy="18" r="2.5" fill="#09E0A5"/>
+            <circle cx="60" cy="62" r="7.5" stroke="#09E0A5" stroke-width="2"/>
+            <circle cx="60" cy="62" r="2.5" fill="#09E0A5"/>
+            <line x1="31.4" y1="33.7" x2="53.4" y2="21.6" stroke="#09E0A5" stroke-width="1.5" stroke-opacity="0.5"/>
+            <line x1="31.4" y1="46.3" x2="53.4" y2="58.4" stroke="#09E0A5" stroke-width="1.5" stroke-opacity="0.5"/>
+          </svg>
+        </div>
+        <span class="vlabel">48px</span>
+      </div>
+
+      <!-- 24px -->
+      <div class="vcell">
+        <div class="bg-dark" style="padding:16px;">
+          <svg width="24" height="24" viewBox="0 0 80 80" fill="none">
+            <circle cx="20" cy="40" r="13"  stroke="#09E0A5" stroke-width="3"/>
+            <circle cx="20" cy="40" r="7.5" stroke="#09E0A5" stroke-width="3"/>
+            <circle cx="20" cy="40" r="3.5" fill="#09E0A5"/>
+            <circle cx="60" cy="18" r="7.5" stroke="#09E0A5" stroke-width="3"/>
+            <circle cx="60" cy="18" r="3"   fill="#09E0A5"/>
+            <circle cx="60" cy="62" r="7.5" stroke="#09E0A5" stroke-width="3"/>
+            <circle cx="60" cy="62" r="3"   fill="#09E0A5"/>
+            <line x1="31.4" y1="33.7" x2="53.4" y2="21.6" stroke="#09E0A5" stroke-width="2.5" stroke-opacity="0.55"/>
+            <line x1="31.4" y1="46.3" x2="53.4" y2="58.4" stroke="#09E0A5" stroke-width="2.5" stroke-opacity="0.55"/>
+          </svg>
+        </div>
+        <span class="vlabel">24px</span>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- mono white on dark -->
+      <div class="vcell">
+        <div class="bg-dark" style="padding:24px;">
+          <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+            <circle cx="20" cy="40" r="13"  stroke="white" stroke-width="1.5"/>
+            <circle cx="20" cy="40" r="7.5" stroke="white" stroke-width="1.5"/>
+            <circle cx="20" cy="40" r="3"   fill="white"/>
+            <circle cx="60" cy="18" r="7.5" stroke="white" stroke-width="1.5"/>
+            <circle cx="60" cy="18" r="2.5" fill="white"/>
+            <circle cx="60" cy="62" r="7.5" stroke="white" stroke-width="1.5"/>
+            <circle cx="60" cy="62" r="2.5" fill="white"/>
+            <line x1="31.4" y1="33.7" x2="53.4" y2="21.6" stroke="white" stroke-width="1" stroke-opacity="0.38"/>
+            <line x1="31.4" y1="46.3" x2="53.4" y2="58.4" stroke="white" stroke-width="1" stroke-opacity="0.38"/>
+          </svg>
+        </div>
+        <span class="vlabel">Mono white</span>
+      </div>
+
+      <!-- mono dark on light -->
+      <div class="vcell">
+        <div class="bg-light" style="padding:24px;">
+          <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+            <circle cx="20" cy="40" r="13"  stroke="#07090C" stroke-width="1.5"/>
+            <circle cx="20" cy="40" r="7.5" stroke="#07090C" stroke-width="1.5"/>
+            <circle cx="20" cy="40" r="3"   fill="#07090C"/>
+            <circle cx="60" cy="18" r="7.5" stroke="#07090C" stroke-width="1.5"/>
+            <circle cx="60" cy="18" r="2.5" fill="#07090C"/>
+            <circle cx="60" cy="62" r="7.5" stroke="#07090C" stroke-width="1.5"/>
+            <circle cx="60" cy="62" r="2.5" fill="#07090C"/>
+            <line x1="31.4" y1="33.7" x2="53.4" y2="21.6" stroke="#07090C" stroke-width="1" stroke-opacity="0.3"/>
+            <line x1="31.4" y1="46.3" x2="53.4" y2="58.4" stroke="#07090C" stroke-width="1" stroke-opacity="0.3"/>
+          </svg>
+        </div>
+        <span class="vlabel">Mono dark</span>
+      </div>
+
+      <!-- brand on light -->
+      <div class="vcell">
+        <div class="bg-light" style="padding:24px;">
+          <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+            <circle cx="20" cy="40" r="13"  stroke="#00A87A" stroke-width="1.5"/>
+            <circle cx="20" cy="40" r="7.5" stroke="#00A87A" stroke-width="1.5"/>
+            <circle cx="20" cy="40" r="3"   fill="#00A87A"/>
+            <circle cx="60" cy="18" r="7.5" stroke="#00A87A" stroke-width="1.5"/>
+            <circle cx="60" cy="18" r="2.5" fill="#00A87A"/>
+            <circle cx="60" cy="62" r="7.5" stroke="#00A87A" stroke-width="1.5"/>
+            <circle cx="60" cy="62" r="2.5" fill="#00A87A"/>
+            <line x1="31.4" y1="33.7" x2="53.4" y2="21.6" stroke="#00A87A" stroke-width="1" stroke-opacity="0.42"/>
+            <line x1="31.4" y1="46.3" x2="53.4" y2="58.4" stroke="#00A87A" stroke-width="1" stroke-opacity="0.42"/>
+          </svg>
+        </div>
+        <span class="vlabel">Brand on light</span>
+      </div>
+
+    </div>
+
+    <div class="note">
+      <strong>Mark anatomy:</strong> Double-ring node (Panel) at left — communicates the routing core.<br>
+      Two single-ring nodes (Agents) at upper-right and lower-right — connected by precise diagonal traces.<br>
+      Connection lines are always rendered at 50% opacity; center dots are always filled.
+    </div>
+  </div>
+
+  <!-- ═══ HORIZONTAL LOCKUP ═══ -->
+  <div class="section">
+    <div class="section-head"><span>Horizontal lockup</span></div>
+    <div class="vrow">
+
+      <!-- dark + brand -->
+      <div class="vcell">
+        <div class="bg-dark" style="padding:28px 36px;">
+          <div class="lk-h ctx-dk-brand">
+            <svg width="52" height="52" viewBox="0 0 80 80" fill="none">
+              <circle cx="20" cy="40" r="13"  stroke="#09E0A5" stroke-width="1.7"/>
+              <circle cx="20" cy="40" r="7.5" stroke="#09E0A5" stroke-width="1.7"/>
+              <circle cx="20" cy="40" r="3"   fill="#09E0A5"/>
+              <circle cx="60" cy="18" r="7.5" stroke="#09E0A5" stroke-width="1.7"/>
+              <circle cx="60" cy="18" r="2.5" fill="#09E0A5"/>
+              <circle cx="60" cy="62" r="7.5" stroke="#09E0A5" stroke-width="1.7"/>
+              <circle cx="60" cy="62" r="2.5" fill="#09E0A5"/>
+              <line x1="31.4" y1="33.7" x2="53.4" y2="21.6" stroke="#09E0A5" stroke-width="1" stroke-opacity="0.5"/>
+              <line x1="31.4" y1="46.3" x2="53.4" y2="58.4" stroke="#09E0A5" stroke-width="1" stroke-opacity="0.5"/>
+            </svg>
+            <div class="wm">
+              <span class="wm-agent">Agent</span>
+              <span class="wm-link">Link</span>
+            </div>
+          </div>
+        </div>
+        <span class="vlabel">Dark · brand</span>
+      </div>
+
+      <!-- dark + white -->
+      <div class="vcell">
+        <div class="bg-dark" style="padding:28px 36px;">
+          <div class="lk-h ctx-dk">
+            <svg width="52" height="52" viewBox="0 0 80 80" fill="none">
+              <circle cx="20" cy="40" r="13"  stroke="white" stroke-width="1.7"/>
+              <circle cx="20" cy="40" r="7.5" stroke="white" stroke-width="1.7"/>
+              <circle cx="20" cy="40" r="3"   fill="white"/>
+              <circle cx="60" cy="18" r="7.5" stroke="white" stroke-width="1.7"/>
+              <circle cx="60" cy="18" r="2.5" fill="white"/>
+              <circle cx="60" cy="62" r="7.5" stroke="white" stroke-width="1.7"/>
+              <circle cx="60" cy="62" r="2.5" fill="white"/>
+              <line x1="31.4" y1="33.7" x2="53.4" y2="21.6" stroke="white" stroke-width="1" stroke-opacity="0.38"/>
+              <line x1="31.4" y1="46.3" x2="53.4" y2="58.4" stroke="white" stroke-width="1" stroke-opacity="0.38"/>
+            </svg>
+            <div class="wm">
+              <span class="wm-agent">Agent</span>
+              <span class="wm-link">Link</span>
+            </div>
+          </div>
+        </div>
+        <span class="vlabel">Dark · mono</span>
+      </div>
+
+      <!-- light + dark -->
+      <div class="vcell">
+        <div class="bg-light" style="padding:28px 36px;">
+          <div class="lk-h ctx-lt">
+            <svg width="52" height="52" viewBox="0 0 80 80" fill="none">
+              <circle cx="20" cy="40" r="13"  stroke="#07090C" stroke-width="1.7"/>
+              <circle cx="20" cy="40" r="7.5" stroke="#07090C" stroke-width="1.7"/>
+              <circle cx="20" cy="40" r="3"   fill="#07090C"/>
+              <circle cx="60" cy="18" r="7.5" stroke="#07090C" stroke-width="1.7"/>
+              <circle cx="60" cy="18" r="2.5" fill="#07090C"/>
+              <circle cx="60" cy="62" r="7.5" stroke="#07090C" stroke-width="1.7"/>
+              <circle cx="60" cy="62" r="2.5" fill="#07090C"/>
+              <line x1="31.4" y1="33.7" x2="53.4" y2="21.6" stroke="#07090C" stroke-width="1" stroke-opacity="0.3"/>
+              <line x1="31.4" y1="46.3" x2="53.4" y2="58.4" stroke="#07090C" stroke-width="1" stroke-opacity="0.3"/>
+            </svg>
+            <div class="wm">
+              <span class="wm-agent">Agent</span>
+              <span class="wm-link">Link</span>
+            </div>
+          </div>
+        </div>
+        <span class="vlabel">Light · mono</span>
+      </div>
+
+      <!-- light + brand -->
+      <div class="vcell">
+        <div class="bg-light" style="padding:28px 36px;">
+          <div class="lk-h ctx-lt-brand">
+            <svg width="52" height="52" viewBox="0 0 80 80" fill="none">
+              <circle cx="20" cy="40" r="13"  stroke="#00A87A" stroke-width="1.7"/>
+              <circle cx="20" cy="40" r="7.5" stroke="#00A87A" stroke-width="1.7"/>
+              <circle cx="20" cy="40" r="3"   fill="#00A87A"/>
+              <circle cx="60" cy="18" r="7.5" stroke="#00A87A" stroke-width="1.7"/>
+              <circle cx="60" cy="18" r="2.5" fill="#00A87A"/>
+              <circle cx="60" cy="62" r="7.5" stroke="#00A87A" stroke-width="1.7"/>
+              <circle cx="60" cy="62" r="2.5" fill="#00A87A"/>
+              <line x1="31.4" y1="33.7" x2="53.4" y2="21.6" stroke="#00A87A" stroke-width="1" stroke-opacity="0.42"/>
+              <line x1="31.4" y1="46.3" x2="53.4" y2="58.4" stroke="#00A87A" stroke-width="1" stroke-opacity="0.42"/>
+            </svg>
+            <div class="wm">
+              <span class="wm-agent">Agent</span>
+              <span class="wm-link">Link</span>
+            </div>
+          </div>
+        </div>
+        <span class="vlabel">Light · brand</span>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══ VERTICAL LOCKUP ═══ -->
+  <div class="section">
+    <div class="section-head"><span>Vertical lockup</span></div>
+    <div class="vrow">
+
+      <!-- dark + brand -->
+      <div class="vcell">
+        <div class="bg-dark" style="padding:36px 52px;">
+          <div class="lk-v ctx-dk-brand">
+            <svg width="64" height="64" viewBox="0 0 80 80" fill="none">
+              <circle cx="20" cy="40" r="13"  stroke="#09E0A5" stroke-width="1.6"/>
+              <circle cx="20" cy="40" r="7.5" stroke="#09E0A5" stroke-width="1.6"/>
+              <circle cx="20" cy="40" r="3"   fill="#09E0A5"/>
+              <circle cx="60" cy="18" r="7.5" stroke="#09E0A5" stroke-width="1.6"/>
+              <circle cx="60" cy="18" r="2.5" fill="#09E0A5"/>
+              <circle cx="60" cy="62" r="7.5" stroke="#09E0A5" stroke-width="1.6"/>
+              <circle cx="60" cy="62" r="2.5" fill="#09E0A5"/>
+              <line x1="31.4" y1="33.7" x2="53.4" y2="21.6" stroke="#09E0A5" stroke-width="1" stroke-opacity="0.5"/>
+              <line x1="31.4" y1="46.3" x2="53.4" y2="58.4" stroke="#09E0A5" stroke-width="1" stroke-opacity="0.5"/>
+            </svg>
+            <div class="wm">
+              <span class="wm-agent">Agent</span>
+              <span class="wm-link">Link</span>
+            </div>
+          </div>
+        </div>
+        <span class="vlabel">Dark · brand</span>
+      </div>
+
+      <!-- dark + white -->
+      <div class="vcell">
+        <div class="bg-dark" style="padding:36px 52px;">
+          <div class="lk-v ctx-dk">
+            <svg width="64" height="64" viewBox="0 0 80 80" fill="none">
+              <circle cx="20" cy="40" r="13"  stroke="white" stroke-width="1.6"/>
+              <circle cx="20" cy="40" r="7.5" stroke="white" stroke-width="1.6"/>
+              <circle cx="20" cy="40" r="3"   fill="white"/>
+              <circle cx="60" cy="18" r="7.5" stroke="white" stroke-width="1.6"/>
+              <circle cx="60" cy="18" r="2.5" fill="white"/>
+              <circle cx="60" cy="62" r="7.5" stroke="white" stroke-width="1.6"/>
+              <circle cx="60" cy="62" r="2.5" fill="white"/>
+              <line x1="31.4" y1="33.7" x2="53.4" y2="21.6" stroke="white" stroke-width="1" stroke-opacity="0.35"/>
+              <line x1="31.4" y1="46.3" x2="53.4" y2="58.4" stroke="white" stroke-width="1" stroke-opacity="0.35"/>
+            </svg>
+            <div class="wm">
+              <span class="wm-agent">Agent</span>
+              <span class="wm-link">Link</span>
+            </div>
+          </div>
+        </div>
+        <span class="vlabel">Dark · mono</span>
+      </div>
+
+      <!-- light + brand -->
+      <div class="vcell">
+        <div class="bg-light" style="padding:36px 52px;">
+          <div class="lk-v ctx-lt-brand">
+            <svg width="64" height="64" viewBox="0 0 80 80" fill="none">
+              <circle cx="20" cy="40" r="13"  stroke="#00A87A" stroke-width="1.6"/>
+              <circle cx="20" cy="40" r="7.5" stroke="#00A87A" stroke-width="1.6"/>
+              <circle cx="20" cy="40" r="3"   fill="#00A87A"/>
+              <circle cx="60" cy="18" r="7.5" stroke="#00A87A" stroke-width="1.6"/>
+              <circle cx="60" cy="18" r="2.5" fill="#00A87A"/>
+              <circle cx="60" cy="62" r="7.5" stroke="#00A87A" stroke-width="1.6"/>
+              <circle cx="60" cy="62" r="2.5" fill="#00A87A"/>
+              <line x1="31.4" y1="33.7" x2="53.4" y2="21.6" stroke="#00A87A" stroke-width="1" stroke-opacity="0.4"/>
+              <line x1="31.4" y1="46.3" x2="53.4" y2="58.4" stroke="#00A87A" stroke-width="1" stroke-opacity="0.4"/>
+            </svg>
+            <div class="wm">
+              <span class="wm-agent">Agent</span>
+              <span class="wm-link">Link</span>
+            </div>
+          </div>
+        </div>
+        <span class="vlabel">Light · brand</span>
+      </div>
+
+      <!-- light + mono -->
+      <div class="vcell">
+        <div class="bg-light" style="padding:36px 52px;">
+          <div class="lk-v ctx-lt">
+            <svg width="64" height="64" viewBox="0 0 80 80" fill="none">
+              <circle cx="20" cy="40" r="13"  stroke="#07090C" stroke-width="1.6"/>
+              <circle cx="20" cy="40" r="7.5" stroke="#07090C" stroke-width="1.6"/>
+              <circle cx="20" cy="40" r="3"   fill="#07090C"/>
+              <circle cx="60" cy="18" r="7.5" stroke="#07090C" stroke-width="1.6"/>
+              <circle cx="60" cy="18" r="2.5" fill="#07090C"/>
+              <circle cx="60" cy="62" r="7.5" stroke="#07090C" stroke-width="1.6"/>
+              <circle cx="60" cy="62" r="2.5" fill="#07090C"/>
+              <line x1="31.4" y1="33.7" x2="53.4" y2="21.6" stroke="#07090C" stroke-width="1" stroke-opacity="0.28"/>
+              <line x1="31.4" y1="46.3" x2="53.4" y2="58.4" stroke="#07090C" stroke-width="1" stroke-opacity="0.28"/>
+            </svg>
+            <div class="wm">
+              <span class="wm-agent">Agent</span>
+              <span class="wm-link">Link</span>
+            </div>
+          </div>
+        </div>
+        <span class="vlabel">Light · mono</span>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══ COLOR SYSTEM ═══ -->
+  <div class="section">
+    <div class="section-head"><span>Color system</span></div>
+    <div class="palette">
+      <div class="swatch">
+        <div class="swatch-chip" style="background:#09E0A5;"></div>
+        <div class="swatch-info">#09E0A5<br>Brand / dark bg</div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-chip" style="background:#00A87A;"></div>
+        <div class="swatch-info">#00A87A<br>Brand / light bg</div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-chip" style="background:#07090C; border:1px solid #1A2332;"></div>
+        <div class="swatch-info">#07090C<br>Ink</div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-chip" style="background:#0D1319; border:1px solid #1A2332;"></div>
+        <div class="swatch-info">#0D1319<br>Ink 2</div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-chip" style="background:#16212E; border:1px solid #2A3D50;"></div>
+        <div class="swatch-info">#16212E<br>Ink 3</div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-chip" style="background:#3A5068;"></div>
+        <div class="swatch-info">#3A5068<br>Muted</div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-chip" style="background:#F0F4F7;"></div>
+        <div class="swatch-info">#F0F4F7<br>Paper</div>
+      </div>
+    </div>
+
+    <div class="note" style="margin-top:28px;">
+      <strong>Typography:</strong> IBM Plex Mono — weight 300 (label) / 700 (wordmark).<br>
+      <strong>Wordmark:</strong> "agent" light + wide tracking, stacked above "link" bold. All caps, no decoration.<br>
+      <strong>Minimum size:</strong> Icon mark no smaller than 16px; lockup no smaller than 48px wide.<br>
+      <strong>Clear space:</strong> Maintain padding equal to the Panel node outer radius on all sides.
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
