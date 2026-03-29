@@ -46,6 +46,24 @@
      @folder-rename.window="renameFolder($event.detail)"
      @data-refresh.window="refreshData()">
 
+  <!-- Login screen -->
+  <template x-if="authRequired && !authenticated">
+    <div class="flex-1 flex items-center justify-center">
+      <div class="bg-gray-900 border border-gray-700 rounded-lg w-80 p-6 space-y-4">
+        <h2 class="text-lg font-semibold text-gray-200 text-center">Agent Link</h2>
+        <input x-model="loginToken" @keydown.enter.prevent="login()" type="password" placeholder="Admin token"
+               class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm mono outline-none focus:border-gray-500" autofocus />
+        <div x-show="loginError" class="text-red-400 text-xs" x-text="loginError"></div>
+        <button @click="login()" :disabled="!loginToken.trim()"
+                class="w-full px-3 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 rounded text-sm">Login</button>
+      </div>
+    </div>
+  </template>
+
+  <!-- Main app (hidden when auth required but not authenticated) -->
+  <template x-if="!authRequired || authenticated">
+  <div class="flex h-screen w-full">
+
   <!-- Sidebar -->
   <div x-data="sidebar()" class="flex flex-shrink-0">
     <div class="bg-gray-900 flex flex-col flex-shrink-0 overflow-hidden transition-[width] duration-200"
@@ -287,6 +305,8 @@
       <span x-show="currentId && activeSet.has(currentId)" class="text-green-400">active</span>
     </div>
   </div>
+  </div>
+  </template><!-- /main app template -->
 
 </div>
 
