@@ -85,11 +85,12 @@ if (subcommand === "help" || subArgs.includes("--help") || subArgs.includes("-h"
   agent-link send <name|id> <msg> [--url]   Send message to an agent
   agent-link bio [name|id]                         Ask agent to write its own one-line bio and save it
   agent-link intro [name|id]                       Ask agent to write its own intro (2-4 sentences) and save it
-  agent-link skill                                 Print agent-link skill/cheatsheet
+  agent-link skill [--team-work]                   Print inter-agent teamwork cheatsheet (default)
+  agent-link skill --setup                         Print installation and configuration guide
 
 Server options:
   --port <n>        HTTP port (default: 3456)
-  --bind <ip>       Bind IP address (default: 0.0.0.0)
+  --bind <ip>       Bind IP address (default: 127.0.0.1, or 0.0.0.0 when --accept-nodes)
   --accept-nodes    Accept remote node connections via WebSocket
   --no-local        Disable local Claude SDK (router-only, requires --accept-nodes)
   --token <value>   Admin token for panel auth (auto-generated if omitted)
@@ -121,10 +122,8 @@ const connectTo = isNodeSubcommand
 const acceptNodes = subArgs.includes("--accept-nodes");
 const noLocal = subArgs.includes("--no-local");
 const port = parseInt(getArg(subArgs, "--port") || "3456");
-// In node mode: default bind 127.0.0.1 unless relay (--accept-nodes) → 0.0.0.0
-const defaultBind = isNodeSubcommand
-  ? (acceptNodes ? "0.0.0.0" : "127.0.0.1")
-  : "0.0.0.0";
+// Default bind: 0.0.0.0 when accepting remote connections (--accept-nodes), 127.0.0.1 otherwise
+const defaultBind = acceptNodes ? "0.0.0.0" : "127.0.0.1";
 const bindHost = getArg(subArgs, "--bind") || defaultBind;
 const tokenArg = getArg(subArgs, "--token");
 const noAuth = subArgs.includes("--no-auth");
