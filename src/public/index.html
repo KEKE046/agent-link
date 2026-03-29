@@ -181,7 +181,7 @@
     <div x-show="!sidebarCollapsed" @mousedown.prevent="startResize($event)" @touchstart.prevent="startResize($event)"
          @keydown="handleResizeKeydown($event)" tabindex="0"
          role="separator" aria-orientation="vertical" aria-label="Resize sidebar"
-         class="w-1 bg-gray-800 hover:bg-gray-700 active:bg-gray-700 cursor-col-resize flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"></div>
+         class="w-1 bg-transparent hover:bg-gray-700 active:bg-gray-700 cursor-col-resize flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"></div>
     <!-- Fixed dropdown: node ... menu -->
     <template x-if="nodeMenu">
       <div @click.outside="nodeMenu = null"
@@ -541,7 +541,7 @@
   <div x-data="agentConfig()" class="flex flex-shrink-0">
     <!-- Resize handle -->
     <div x-show="!collapsed" @mousedown.prevent="startResize($event)"
-         class="w-1 bg-gray-800 hover:bg-gray-700 active:bg-gray-700 cursor-col-resize flex-shrink-0"></div>
+         class="w-1 bg-transparent hover:bg-gray-700 active:bg-gray-700 cursor-col-resize flex-shrink-0"></div>
 
     <div class="bg-gray-900 flex flex-col flex-shrink-0 overflow-hidden transition-[width] duration-200"
          :style="`width: ${collapsed ? 0 : width}px`"
