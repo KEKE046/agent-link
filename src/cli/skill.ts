@@ -257,30 +257,26 @@ agent-link node http://localhost:13456 --name remote-machine
 
 ## SSH Keepalive
 
-Keeps tunnels and sessions alive through idle periods.
+Pass keepalive options directly on the command line — no config file editing needed:
 
-**Client side** (\`~/.ssh/config\`):
+\`\`\`sh
+# Plain ssh tunnel with keepalive
+ssh -o "ServerAliveInterval=30" -o "ServerAliveCountMax=3" \\
+  -N -R 13456:localhost:3456 user@panel-server
 
-\`\`\`
-Host *
-    ServerAliveInterval 30
-    ServerAliveCountMax 3
-\`\`\`
-
-**Server side** (\`/etc/ssh/sshd_config\`):
-
-\`\`\`
-ClientAliveInterval 30
-ClientAliveCountMax 3
-\`\`\`
-
-If the tunnel needs to bind on all interfaces on the server (so other machines can reach it):
-
-\`\`\`
-GatewayPorts yes
+# autossh (recommended for persistent tunnels)
+autossh -M 0 -N \\
+  -o "ServerAliveInterval=30" \\
+  -o "ServerAliveCountMax=3" \\
+  -o "ExitOnForwardFailure=yes" \\
+  -R 13456:localhost:3456 \\
+  user@panel-server
 \`\`\`
 
-Reload after changes: \`sudo systemctl reload sshd\`
+If the tunnel needs to bind on 0.0.0.0 on the server (so machines other than the server
+itself can reach it), the server's sshd needs \`GatewayPorts yes\` — this requires a
+sysadmin to set in \`/etc/ssh/sshd_config\`. For the common case where only the node
+itself connects to localhost, the default is fine.
 
 ---
 
