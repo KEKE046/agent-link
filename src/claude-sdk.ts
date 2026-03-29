@@ -22,7 +22,7 @@ export interface ClaudeSdk {
 function wrappedQuery(params: { prompt: string; options?: Record<string, any> }): Query {
   return sdkQuery({
     prompt: params.prompt,
-    options: { pathToClaudeCodeExecutable: embeddedCliPath, ...params.options } as any,
+    options: { pathToClaudeCodeExecutable: embeddedCliPath, executable: process.execPath, ...params.options } as any,
   });
 }
 
