@@ -78,7 +78,9 @@
       <span class="text-[11px] font-semibold tracking-[0.14em] text-gray-500 uppercase hidden sm:block select-none">Agent Link</span>
       <button @click="toggleSidebar()" class="header-btn text-gray-500"
               :title="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'">
-        <span class="sidebar-arrow text-[13px]" :class="sidebarCollapsed ? '' : 'is-flipped'">❯</span>
+        <span class="sidebar-arrow flex items-center justify-center" :class="sidebarCollapsed ? '' : 'is-flipped'">
+          <svg width="8" height="8" viewBox="0 0 8 8" fill="none"><path d="M2 1l4 3-4 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
       </button>
       <div class="w-px h-4 bg-gray-800 mx-1 flex-shrink-0"></div>
       <!-- Session state indicator -->
@@ -115,8 +117,10 @@
             <!-- Node header -->
             <div @click="toggleGroup('node:' + n.nodeId)"
                  class="px-3 py-1 flex items-center gap-1.5 cursor-pointer hover:bg-gray-800/50 text-xs text-gray-300 sticky top-0 bg-gray-900 z-10 group">
-              <span class="sidebar-arrow text-[13px] text-gray-500 w-3 flex-shrink-0"
-                    :class="expandedGroups.has('node:' + n.nodeId) ? 'is-open' : ''">❯</span>
+              <span class="sidebar-arrow flex-shrink-0 w-3 flex items-center justify-center text-gray-500"
+                    :class="expandedGroups.has('node:' + n.nodeId) ? 'is-open' : ''">
+                <svg width="8" height="8" viewBox="0 0 8 8" fill="none"><path d="M2 1l4 3-4 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </span>
               <span class="w-2 h-2 rounded-full flex-shrink-0"
                     :class="!isNodeOnline(n.nodeId) ? 'bg-gray-600' : n.approved === false ? 'bg-yellow-400' : 'bg-green-400'"></span>
               <span class="truncate flex-1 font-semibold" x-text="n.label || n.nodeId"></span>
@@ -134,8 +138,10 @@
                   <div>
                     <div class="pl-7 pr-3 py-0.5 flex items-center gap-1.5 hover:bg-gray-800/50 text-xs text-gray-400 sticky bg-gray-900 group" style="top:1.5rem">
                       <span @click="toggleGroup(n.nodeId + ':' + g.cwd)"
-                            class="sidebar-arrow text-[13px] text-gray-500 w-3 flex-shrink-0 cursor-pointer"
-                            :class="expandedGroups.has(n.nodeId + ':' + g.cwd) ? 'is-open' : ''">❯</span>
+                            class="sidebar-arrow flex-shrink-0 w-3 flex items-center justify-center text-gray-500 cursor-pointer"
+                            :class="expandedGroups.has(n.nodeId + ':' + g.cwd) ? 'is-open' : ''">
+                        <svg width="8" height="8" viewBox="0 0 8 8" fill="none"><path d="M2 1l4 3-4 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      </span>
                       <span @click="g.sessions.length === 1 ? emit('session-switch', g.sessions[0].sessionId) : toggleGroup(n.nodeId + ':' + g.cwd)"
                             class="truncate flex-1 font-medium cursor-pointer" :title="g.cwd"
                             x-text="g.label ? '[' + g.label + ']' : (g.cwd.split('/').filter(Boolean).pop() || g.cwd)"></span>
