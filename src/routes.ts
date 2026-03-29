@@ -54,6 +54,8 @@ export function createApp(router: Router): Hono {
 
   app.get("/api/auth/check", async (c) => {
     if (!authEnabled()) return c.json({ authenticated: true, required: false });
+    const bearer = c.req.header("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
+    if (bearer && verifyToken(bearer)) return c.json({ authenticated: true, required: true });
     const ok = await verifyCookie(c.req.header("cookie") ?? null);
     return c.json({ authenticated: ok, required: true });
   });
@@ -64,6 +66,9 @@ export function createApp(router: Router): Hono {
     if (!authEnabled()) return next();
     const path = c.req.path;
     if (path === "/api/login" || path === "/api/auth/check") return next();
+    // Accept Bearer token (for CLI tools) or signed session cookie (for browser)
+    const bearer = c.req.header("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
+    if (bearer && verifyToken(bearer)) return next();
     const ok = await verifyCookie(c.req.header("cookie") ?? null);
     if (!ok) return c.json({ error: "unauthorized" }, 401);
     return next();
@@ -75,10 +80,23 @@ export function createApp(router: Router): Hono {
     const body = await c.req.json();
     const nodeId = body.nodeId || getNodeId(c) || router.localId;
     if (!nodeId) return c.json({ error: "nodeId required" }, 400);
+
+    // Server-side injection: set AGENT_LINK_AGENT_NAME from managed session
+    let claudeParams = body.claudeParams;
+    if (body.sessionId) {
+      const session = listManaged().find((s) => s.id === body.sessionId);
+      if (session?.name && !claudeParams?.env?.AGENT_LINK_AGENT_NAME) {
+        claudeParams = {
+          ...(claudeParams || {}),
+          env: { AGENT_LINK_AGENT_NAME: session.name, ...(claudeParams?.env || {}) },
+        };
+      }
+    }
+
     try {
       return c.json(await router.dispatch(nodeId, "query", {
         prompt: body.prompt, cwd: body.cwd, model: body.model, sessionId: body.sessionId,
-        claudeParams: body.claudeParams,
+        claudeParams,
       }));
     } catch (err: any) {
       return c.json({ error: err.message }, 500);
@@ -222,6 +240,7 @@ export function createApp(router: Router): Hono {
     if (!id || !cwd || !name) return c.json({ error: "id, name, and cwd required" }, 400);
     return c.json(addManaged({
       id, name, cwd,
+      bio: typeof body?.bio === "string" ? body.bio.trim() || undefined : undefined,
       nodeId: typeof body?.nodeId === "string" ? body.nodeId : undefined,
       createdAt: typeof body?.createdAt === "number" ? body.createdAt : Date.now(),
       params: body?.params || undefined,
@@ -230,7 +249,11 @@ export function createApp(router: Router): Hono {
 
   app.patch("/api/managed/:id", async (c) => {
     const body = await c.req.json();
-    const result = updateManaged(c.req.param("id"), { params: body?.params });
+    const patch: any = {};
+    if (body?.params !== undefined) patch.params = body.params;
+    if (typeof body?.bio === "string") patch.bio = body.bio.trim();
+    if (typeof body?.intro === "string") patch.intro = body.intro.trim();
+    const result = updateManaged(c.req.param("id"), patch);
     return result ? c.json(result) : c.json({ error: "not found" }, 404);
   });
 

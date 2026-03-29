@@ -23,6 +23,8 @@ export interface ClaudeParams {
 export interface ManagedSession {
   id: string;
   name: string;
+  bio?: string;
+  intro?: string;
   nodeId?: string;
   cwd: string;
   createdAt: number;
@@ -53,11 +55,13 @@ export function addManaged(session: ManagedSession): ManagedSession[] {
   return all;
 }
 
-export function updateManaged(id: string, patch: Partial<Pick<ManagedSession, 'params'>>): ManagedSession | null {
+export function updateManaged(id: string, patch: Partial<Pick<ManagedSession, 'params' | 'bio' | 'intro'>>): ManagedSession | null {
   const all = readAll();
   const item = all.find((s) => s.id === id);
   if (!item) return null;
   if (patch.params !== undefined) item.params = patch.params;
+  if (patch.bio !== undefined) item.bio = patch.bio || undefined;
+  if (patch.intro !== undefined) item.intro = patch.intro || undefined;
   save("managed-sessions", all);
   return item;
 }

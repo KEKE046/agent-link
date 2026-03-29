@@ -216,19 +216,24 @@ function sidebar() {
       this.browseSessions = [];
       this.browseLoading = false;
       this.browseHasMore = false;
+      const sysPrompt = this.generateDefaultSystemPrompt('', '');
+      const initPrompt = this.generateDefaultInitialPrompt();
       this.agentDialog = {
         nodeId: nodeId || '(local)',
         cwd: cwd || this.cwd,
         tab: 'new',
         name: '',
-        initialPrompt: '',
+        bio: '',
+        initialPrompt: initPrompt,
+        initialPromptDirty: false,
         configOpen: false,
         // Config fields
         cfgModel: '',
         cfgThinking: '',
         cfgEffort: '',
         cfgPermission: '',
-        cfgSystemPrompt: '',
+        cfgSystemPrompt: sysPrompt,
+        cfgSystemPromptDirty: false,
         cfgEnvText: '',
         cfgJsonText: '{}',
         cfgJsonError: '',
@@ -244,6 +249,41 @@ function sidebar() {
       };
     },
 
+    generateDefaultSystemPrompt(name, bio) {
+      const parts = [];
+      if (name) parts.push(`Your name is ${name}.`);
+      if (bio) parts.push(bio);
+      parts.push('You are running inside agent-link, a multi-agent coordination system.');
+      parts.push('Run `agent-link skill` to see available commands and how to communicate with other agents.');
+      return parts.join('\n');
+    },
+
+    generateDefaultInitialPrompt() {
+      return 'Run `agent-link skill` to understand your environment, then `agent-link list` to see all active agents. Introduce yourself briefly and report what you see.';
+    },
+
+    onNameBioChange() {
+      const d = this.agentDialog;
+      if (!d) return;
+      if (!d.cfgSystemPromptDirty) {
+        d.cfgSystemPrompt = this.generateDefaultSystemPrompt(d.name.trim(), d.bio.trim());
+      }
+    },
+
+    resetSystemPrompt() {
+      const d = this.agentDialog;
+      if (!d) return;
+      d.cfgSystemPrompt = this.generateDefaultSystemPrompt(d.name.trim(), d.bio.trim());
+      d.cfgSystemPromptDirty = false;
+    },
+
+    resetInitialPrompt() {
+      const d = this.agentDialog;
+      if (!d) return;
+      d.initialPrompt = this.generateDefaultInitialPrompt();
+      d.initialPromptDirty = false;
+    },
+
     buildDialogParams() {
       const d = this.agentDialog;
       if (!d) return {};
@@ -252,10 +292,9 @@ function sidebar() {
       if (d.cfgThinking) p.thinking = { type: d.cfgThinking };
       if (d.cfgEffort) p.effort = d.cfgEffort;
       if (d.cfgPermission) p.permissionMode = d.cfgPermission;
-      // System prompt: use user's input, or default "Your Name is {name}"
-      const sysPrompt = d.cfgSystemPrompt.trim() || (d.name.trim() ? `Your Name is ${d.name.trim()}` : '');
-      if (sysPrompt) {
-        p.systemPrompt = { type: 'preset', preset: 'claude_code', append: sysPrompt };
+      // System prompt: always use cfgSystemPrompt (pre-filled on dialog open)
+      if (d.cfgSystemPrompt.trim()) {
+        p.systemPrompt = { type: 'preset', preset: 'claude_code', append: d.cfgSystemPrompt.trim() };
       }
       if (d.cfgEnvText.trim()) {
         const env = {};
@@ -351,12 +390,12 @@ function sidebar() {
 
       if (d.tab === 'load' && d.browseSelected) {
         emit('agent-create', {
-          name: d.name.trim(), cwd: d.cwd, nodeId, params,
+          name: d.name.trim(), bio: d.bio.trim() || undefined, cwd: d.cwd, nodeId, params,
           loadSessionId: d.browseSelected,
         });
       } else {
         emit('agent-create', {
-          name: d.name.trim(), cwd: d.cwd, nodeId, params,
+          name: d.name.trim(), bio: d.bio.trim() || undefined, cwd: d.cwd, nodeId, params,
           initialPrompt: d.initialPrompt,
         });
       }
