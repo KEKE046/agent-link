@@ -1,10 +1,34 @@
 import { load, save } from "./store";
 
+export interface ClaudeParams {
+  model?: string;
+  systemPrompt?: string | {
+    type: 'preset';
+    preset: 'claude_code';
+    append?: string;
+  };
+  thinking?: { type: 'adaptive' } | { type: 'enabled'; budgetTokens?: number } | { type: 'disabled' };
+  effort?: 'low' | 'medium' | 'high' | 'max';
+  maxTurns?: number;
+  maxBudgetUsd?: number;
+  permissionMode?: string;
+  allowedTools?: string[];
+  disallowedTools?: string[];
+  env?: Record<string, string>;
+  permissions?: { allow?: string[]; deny?: string[]; ask?: string[] };
+  apiKeyHelper?: string;
+  [key: string]: any;
+}
+
 export interface ManagedSession {
   id: string;
+  name: string;
   nodeId?: string;
   cwd: string;
   createdAt: number;
+  params?: {
+    claude?: ClaudeParams;
+  };
 }
 
 export interface ManagedFolder {
@@ -27,6 +51,15 @@ export function addManaged(session: ManagedSession): ManagedSession[] {
   all.unshift(session);
   save("managed-sessions", all);
   return all;
+}
+
+export function updateManaged(id: string, patch: Partial<Pick<ManagedSession, 'params'>>): ManagedSession | null {
+  const all = readAll();
+  const item = all.find((s) => s.id === id);
+  if (!item) return null;
+  if (patch.params !== undefined) item.params = patch.params;
+  save("managed-sessions", all);
+  return item;
 }
 
 export function removeManaged(id: string): ManagedSession[] {

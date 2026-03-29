@@ -1,24 +1,19 @@
 <!--
-  Agent Link — 前端模块结构
+  Agent Link — frontend module structure
   ═══════════════════════════════════════════════════
-  index.html     本文件，HTML 骨架 + Alpine 模板
-  app.js         核心状态、session 生命周期、SSE、send/switch/interrupt
-  sidebar.js     侧边栏：分组、展开折叠、Add 弹窗（New/Browse）、节点管理
-  renderer.js    消息渲染组件 + Alpine messages 组件
+  index.html       HTML skeleton + Alpine templates
+  app.js           Core state, session lifecycle, SSE, send/switch/interrupt
+  sidebar.js       Left sidebar: grouped sessions, add-agent dialog, folder management
+  agent-config.js  Right sidebar: per-session config (model, thinking, env, etc.)
+  renderer.js      Message rendering component + Alpine messages component
 
-  组件通信：
-    emit(name, detail) → window CustomEvent，所有组件统一用
-    sidebar → app:  session-switch, session-create, session-remove, session-add,
-                    folder-add, folder-remove, data-refresh
-    app → sidebar:  通过响应式状态 (currentId, managed, managedFolders, activeSet, nodes)
-    sidebar 自动展开:  $watch('currentId')
+  Component communication:
+    emit(name, detail) -> window CustomEvent
+    sidebar -> app:  session-switch, session-remove, agent-create, folder-add, folder-remove, folder-rename
+    config  -> app:  config-save, config-compact, config-reload
+    app -> components: reactive state (currentId, managed, managedFolders, activeSet, nodes)
 
-  样式：tailwind.input.css → styles.css (bunx @tailwindcss/cli 编译)
-
-  改动须知：
-    - 改模板时同步检查对应 JS 的 emit/状态引用
-    - 改 JS 事件名时全局搜索 emit('xxx') 和 @xxx.window
-    - 加新 public 文件时更新 src/assets.ts
+  Styles: tailwind.input.css -> styles.css (bunx @tailwindcss/cli)
 -->
 <!DOCTYPE html>
 <html lang="en">
@@ -31,6 +26,7 @@
   <script src="/renderer.js"></script>
   <script src="/app.js"></script>
   <script src="/sidebar.js"></script>
+  <script src="/agent-config.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
 </head>
 <body class="bg-gray-950 text-gray-100 h-screen overflow-hidden">
@@ -38,12 +34,12 @@
 <div x-data="app()" x-cloak class="flex h-screen"
      @session-switch.window="switchSession($event.detail)"
      @session-new.window="newSession()"
-     @session-create.window="createSession($event.detail)"
      @session-remove.window="removeManaged($event.detail)"
-     @session-add.window="addManaged($event.detail)"
+     @agent-create.window="createAgent($event.detail)"
      @folder-add.window="addFolder($event.detail)"
      @folder-remove.window="removeFolder($event.detail)"
      @folder-rename.window="renameFolder($event.detail)"
+     @config-save.window="onConfigSave($event.detail)"
      @data-refresh.window="refreshData()">
 
   <!-- Login screen -->
@@ -60,17 +56,16 @@
     </div>
   </template>
 
-  <!-- Main app (hidden when auth required but not authenticated) -->
+  <!-- Main app -->
   <template x-if="!authRequired || authenticated">
   <div class="flex h-screen w-full">
 
-  <!-- Sidebar -->
+  <!-- ═══ Left Sidebar ═══ -->
   <div x-data="sidebar()" class="flex flex-shrink-0">
     <div class="bg-gray-900 flex flex-col flex-shrink-0 overflow-hidden transition-[width] duration-200"
          :style="`width: ${sidebarCollapsed ? 0 : sidebarWidth}px`"
          :class="sidebarCollapsed ? '' : 'border-r border-gray-800'">
       <div class="flex-1 overflow-y-auto">
-        <!-- Unified session list: works for both panel and standalone mode -->
         <template x-for="n in groupedSessions" :key="n.nodeId">
           <div>
             <!-- Node header -->
@@ -79,8 +74,10 @@
               <span x-text="expandedGroups.has('node:' + n.nodeId) ? '▾' : '▸'" class="text-gray-600 w-3"></span>
               <span class="w-2 h-2 rounded-full flex-shrink-0" :class="isNodeOnline(n.nodeId) ? 'bg-green-400' : 'bg-gray-600'"></span>
               <span class="truncate flex-1 font-semibold" x-text="n.label || n.nodeId"></span>
-              <button @click.stop="openAddModal(n.nodeId)" title="Add session or folder"
-                      class="sidebar-btn">+</button>
+              <div class="relative">
+                <button @click.stop="openMenu($el, n.nodeId, 'node')" title="Add"
+                        class="sidebar-btn">+</button>
+              </div>
             </div>
             <!-- CWD groups -->
             <template x-if="expandedGroups.has('node:' + n.nodeId)">
@@ -94,33 +91,24 @@
                             x-text="g.label ? '[' + g.label + ']' : g.cwd"></span>
                       <span x-show="g.sessions.length > 1" class="text-gray-600 text-[10px]" x-text="'(' + g.sessions.length + ')'"></span>
                       <div class="relative">
-                        <button @click.stop="folderMenu = folderMenu === (n.nodeId + ':' + g.cwd) ? null : (n.nodeId + ':' + g.cwd)"
+                        <button @click.stop="openMenu($el, n.nodeId + ':' + g.cwd, 'folder')"
                                 class="sidebar-btn">…</button>
-                        <div x-show="folderMenu === (n.nodeId + ':' + g.cwd)" @click.outside="folderMenu = null"
-                             class="absolute right-0 top-full mt-0.5 bg-gray-800 border border-gray-700 rounded shadow-lg py-1 z-30 min-w-[6rem]">
-                          <button @click.stop="emit('session-create', {cwd: g.cwd, nodeId: n.nodeId === '(local)' ? undefined : n.nodeId}); folderMenu = null"
-                                  class="w-full text-left px-3 py-1 text-xs text-gray-300 hover:bg-gray-700">Add Session</button>
-                          <button @click.stop="openRenamePopup(g.cwd, n.nodeId); folderMenu = null"
-                                  class="w-full text-left px-3 py-1 text-xs text-gray-300 hover:bg-gray-700">Rename</button>
-                          <button @click.stop="emit('folder-remove', {cwd: g.cwd, nodeId: n.nodeId === '(local)' ? undefined : n.nodeId}); folderMenu = null"
-                                  class="w-full text-left px-3 py-1 text-xs text-gray-300 hover:bg-gray-700">Remove</button>
-                        </div>
                       </div>
                     </div>
                     <template x-if="expandedGroups.has(n.nodeId + ':' + g.cwd)">
                       <div>
                         <template x-for="s in g.sessions" :key="s.sessionId">
-                          <div @click="s._pending ? null : emit('session-switch', s.sessionId)"
-                               :class="s._pending ? 'border-l-2 border-yellow-400 bg-gray-800/50' : currentId === s.sessionId ? 'bg-gray-800 border-l-2 border-blue-400' : 'border-l-2 border-transparent'"
+                          <div @click="emit('session-switch', s.sessionId)"
+                               :class="currentId === s.sessionId ? 'bg-gray-800 border-l-2 border-blue-400' : 'border-l-2 border-transparent'"
                                class="pl-10 pr-3 py-1 cursor-pointer hover:bg-gray-800/50 group flex items-center gap-2"
                                :style="!isNodeOnline(n.nodeId) ? 'opacity:0.5' : ''">
-                            <span class="w-2 h-2 rounded-full flex-shrink-0" :class="s._pending ? 'bg-yellow-400' : activeSet.has(s.sessionId) ? 'bg-green-400 animate-pulse' : 'bg-gray-600'"></span>
-                            <span class="text-sm truncate flex-1" :class="s._pending ? 'text-yellow-400 italic' : ''" x-text="s.label || s.sessionId.slice(0, 8)"></span>
-                            <button x-show="!s._pending" @click.stop="emit('session-remove', s.sessionId)"
+                            <span class="w-2 h-2 rounded-full flex-shrink-0" :class="activeSet.has(s.sessionId) ? 'bg-green-400 animate-pulse' : 'bg-gray-600'"></span>
+                            <span class="text-sm truncate flex-1" x-text="s.name || s.sessionId.slice(0, 8)"></span>
+                            <button @click.stop="emit('session-remove', s.sessionId)"
                                     class="sidebar-btn sidebar-btn-danger opacity-0 group-hover:opacity-100">x</button>
                           </div>
                         </template>
-                        <div x-show="g.sessions.length === 0" class="pl-10 pr-3 py-1 text-gray-600 text-xs">No sessions</div>
+                        <div x-show="g.sessions.length === 0" class="pl-10 pr-3 py-1 text-gray-600 text-xs">No agents</div>
                       </div>
                     </template>
                   </div>
@@ -129,7 +117,7 @@
             </template>
           </div>
         </template>
-        <div x-show="managed.length === 0 && managedFolders.length === 0" class="p-4 text-gray-600 text-sm text-center">No sessions</div>
+        <div x-show="managed.length === 0 && managedFolders.length === 0" class="p-4 text-gray-600 text-sm text-center">No agents</div>
       </div>
     </div>
     <!-- Resize handle -->
@@ -138,78 +126,216 @@
          role="separator" aria-orientation="vertical" aria-label="Resize sidebar"
          class="w-1 bg-gray-800 hover:bg-gray-700 active:bg-gray-700 cursor-col-resize flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"></div>
 
-    <!-- Add Modal (New / Browse) -->
-    <template x-if="addModal">
-      <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50" @click.self="addModal = null" @keydown.escape.window="addModal = null">
-        <div class="bg-gray-900 border border-gray-700 rounded-lg w-[560px] max-h-[70vh] flex flex-col overflow-hidden">
-          <!-- Tabs -->
-          <div class="flex items-center gap-1 px-3 py-2.5 border-b border-gray-800">
-            <button @click="addModal.tab = 'browse'"
-                    :class="addModal.tab === 'browse' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'"
-                    class="px-4 py-1.5 text-sm font-medium rounded">Load Existing</button>
-            <button @click="addModal.tab = 'add'"
-                    :class="addModal.tab === 'add' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'"
-                    class="px-4 py-1.5 text-sm font-medium rounded">New Session</button>
-            <span class="flex-1"></span>
-            <button @click="addModal = null" class="px-2 py-1 text-gray-600 hover:text-gray-300 text-xs rounded hover:bg-gray-800">x</button>
-          </div>
-          <!-- Tab: Add -->
-          <div x-show="addModal.tab === 'add'" class="p-4 space-y-3 text-sm">
-            <label class="text-xs text-gray-400 block">Folder</label>
-            <input x-model="newCwd" placeholder="/path/to/project"
-                   class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm mono outline-none focus:border-gray-500" />
-            <button @click="createNewSession()" :disabled="!newCwd.trim()"
-                    class="w-full px-3 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 rounded text-sm">Create</button>
-          </div>
-          <!-- Tab: Browse -->
-          <div x-show="addModal.tab === 'browse'" class="flex flex-col flex-1 min-h-0">
-            <div class="px-3 py-2 border-b border-gray-800">
-              <input x-model="browseFilter" @input.debounce.500ms="browseOffset = 0; fetchBrowseSessions()" placeholder="Filter by cwd..."
-                     class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1 text-xs mono outline-none" />
+    <!-- Fixed dropdown: node + menu -->
+    <template x-if="nodeMenu">
+      <div @click.outside="nodeMenu = null"
+           class="fixed bg-gray-800 border border-gray-700 rounded shadow-lg py-1 z-50 min-w-[7rem]"
+           :style="`top:${menuPos.top}px; left:${menuPos.left}px`">
+        <button @click.stop="openAgentDialog(nodeMenu); nodeMenu = null"
+                class="w-full text-left px-3 py-1 text-xs text-gray-300 hover:bg-gray-700">Add Agent</button>
+        <button @click.stop="openFolderPopup(nodeMenu)"
+                class="w-full text-left px-3 py-1 text-xs text-gray-300 hover:bg-gray-700">Add Folder</button>
+      </div>
+    </template>
+
+    <!-- Fixed dropdown: folder ... menu -->
+    <template x-if="folderMenu">
+      <div @click.outside="folderMenu = null"
+           class="fixed bg-gray-800 border border-gray-700 rounded shadow-lg py-1 z-50 min-w-[7rem]"
+           :style="`top:${menuPos.top}px; left:${menuPos.left}px`">
+        <button @click.stop="openAgentDialog(folderMenu.split(':')[0], folderMenu.split(':').slice(1).join(':')); folderMenu = null"
+                class="w-full text-left px-3 py-1 text-xs text-gray-300 hover:bg-gray-700">Add Agent</button>
+        <button @click.stop="openRenamePopup(folderMenu.split(':').slice(1).join(':'), folderMenu.split(':')[0]); folderMenu = null"
+                class="w-full text-left px-3 py-1 text-xs text-gray-300 hover:bg-gray-700">Rename</button>
+        <button @click.stop="emit('folder-remove', {cwd: folderMenu.split(':').slice(1).join(':'), nodeId: folderMenu.split(':')[0] === '(local)' ? undefined : folderMenu.split(':')[0]}); folderMenu = null"
+                class="w-full text-left px-3 py-1 text-xs text-gray-300 hover:bg-gray-700">Remove</button>
+      </div>
+    </template>
+
+    <!-- ═══ Add Agent Dialog ═══ -->
+    <template x-if="agentDialog">
+      <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50" @click.self="agentDialog = null" @keydown.escape.window="agentDialog = null">
+        <div class="bg-gray-900 border border-gray-700 rounded-lg flex overflow-hidden" style="max-height:80vh"
+             :style="agentDialog.configOpen ? 'width:800px' : 'width:480px'">
+
+          <!-- Left: main form -->
+          <div class="flex flex-col flex-1 min-w-0">
+            <!-- Header -->
+            <div class="px-4 py-3 border-b border-gray-800 flex items-center gap-2">
+              <span class="text-sm font-semibold text-gray-200 flex-1">Create Agent</span>
+              <button @click="agentDialog.configOpen = !agentDialog.configOpen"
+                      :class="agentDialog.configOpen ? 'bg-gray-700 text-gray-200' : 'text-gray-500 hover:text-gray-300'"
+                      class="px-2 py-1 text-xs rounded hover:bg-gray-800" title="Toggle config">&#9881;</button>
+              <button @click="agentDialog = null" class="px-2 py-1 text-gray-600 hover:text-gray-300 text-xs rounded hover:bg-gray-800">x</button>
             </div>
-            <div class="flex-1 overflow-y-auto">
-              <div x-show="browseLoading" class="p-4 text-gray-500 text-sm text-center">Loading...</div>
-              <template x-for="g in groupedBrowse" :key="g.cwd">
-                <div>
-                  <div class="px-4 py-2 flex items-center gap-1.5 text-xs text-gray-400 sticky top-0 bg-gray-900 border-b border-gray-800/50">
-                    <span @click="browseClickFolder(g)"
-                          class="cursor-pointer flex items-center gap-1.5 flex-1 min-w-0 hover:text-gray-200">
-                      <span x-text="browseExpanded.has(g.cwd) ? '▾' : '▸'" class="text-gray-600 w-3"></span>
-                      <span class="truncate font-medium" x-text="g.cwd"></span>
-                      <span class="text-gray-600 flex-shrink-0" x-text="g.sessions.length"></span>
-                    </span>
-                    <input type="checkbox" :checked="browseCheckedFolders.has(g.cwd) || isManagedFolder(g.cwd, addModal?.nodeId)"
-                           :disabled="isManagedFolder(g.cwd, addModal?.nodeId)"
-                           @click.stop="if (!isManagedFolder(g.cwd, addModal?.nodeId)) toggleBrowseFolder(g.cwd)"
-                           class="w-3.5 h-3.5 rounded border-gray-600 bg-gray-800 flex-shrink-0 cursor-pointer disabled:opacity-50 disabled:cursor-default" title="Add folder" />
-                  </div>
-                  <template x-if="browseExpanded.has(g.cwd)">
-                    <div>
-                      <template x-for="s in g.sessions" :key="s.sessionId">
-                        <div class="pl-7 pr-4 py-2 flex items-center gap-2 hover:bg-gray-800/50 border-b border-gray-800/30">
-                          <div class="flex-1 min-w-0 cursor-pointer" @click="if (!isSessionManaged(s.sessionId)) toggleBrowseSession(s.sessionId)">
-                            <div class="text-sm truncate" x-text="s.summary || s.sessionId.slice(0, 12)"></div>
-                            <div class="text-xs text-gray-500 mt-0.5" x-text="s.lastModified ? new Date(s.lastModified).toLocaleString() : ''"></div>
-                          </div>
-                          <input type="checkbox" :checked="browseCheckedSessions.has(s.sessionId) || isSessionManaged(s.sessionId)"
-                                 :disabled="isSessionManaged(s.sessionId)"
-                                 @click.stop="if (!isSessionManaged(s.sessionId)) toggleBrowseSession(s.sessionId)"
-                                 class="w-3.5 h-3.5 rounded border-gray-600 bg-gray-800 flex-shrink-0 cursor-pointer disabled:opacity-50 disabled:cursor-default" />
-                        </div>
-                      </template>
+
+            <div class="flex-1 overflow-y-auto p-4 space-y-3">
+              <!-- Agent name -->
+              <div>
+                <label class="text-xs text-gray-400 block mb-1">Agent Name *</label>
+                <input x-model="agentDialog.name" placeholder="e.g. Code Helper"
+                       class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm mono outline-none focus:border-gray-500" autofocus />
+              </div>
+
+              <!-- Node / CWD -->
+              <div class="flex gap-2">
+                <div class="flex-1" x-show="panelMode">
+                  <label class="text-xs text-gray-400 block mb-1">Node</label>
+                  <select x-model="agentDialog.nodeId" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-xs outline-none">
+                    <option value="(local)">(local)</option>
+                    <template x-for="n in nodes" :key="n.nodeId">
+                      <option :value="n.nodeId" x-text="n.label || n.nodeId"></option>
+                    </template>
+                  </select>
+                </div>
+                <div class="flex-1">
+                  <label class="text-xs text-gray-400 block mb-1">CWD</label>
+                  <input x-model="agentDialog.cwd" placeholder="/path/to/project"
+                         class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm mono outline-none focus:border-gray-500" />
+                </div>
+              </div>
+
+              <!-- Tabs: New / Load -->
+              <div class="flex gap-1">
+                <button @click="agentDialog.tab = 'new'"
+                        :class="agentDialog.tab === 'new' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'"
+                        class="px-4 py-1.5 text-xs font-medium rounded">New</button>
+                <button @click="agentDialog.tab = 'load'; if (agentDialog.browseSessions.length === 0) fetchBrowseSessions()"
+                        :class="agentDialog.tab === 'load' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'"
+                        class="px-4 py-1.5 text-xs font-medium rounded">Load</button>
+              </div>
+
+              <!-- New tab -->
+              <div x-show="agentDialog.tab === 'new'">
+                <label class="text-xs text-gray-400 block mb-1">Initial Prompt</label>
+                <textarea x-model="agentDialog.initialPrompt" rows="3"
+                          placeholder="hello"
+                          class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm mono outline-none focus:border-gray-500 resize-y"></textarea>
+              </div>
+
+              <!-- Load tab -->
+              <div x-show="agentDialog.tab === 'load'" class="space-y-2">
+                <div class="flex gap-1">
+                  <input x-model="agentDialog.browseFilter" @input.debounce.500ms="agentDialog.browseOffset = 0; fetchBrowseSessions()" placeholder="Filter by cwd..."
+                         class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-1 text-xs mono outline-none focus:border-gray-500" />
+                  <button @click="agentDialog.browseExact = !agentDialog.browseExact; agentDialog.browseOffset = 0; fetchBrowseSessions()"
+                          :class="agentDialog.browseExact ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-500 hover:text-gray-300'"
+                          class="px-2 py-1 border border-gray-700 rounded text-[10px] flex-shrink-0" title="Exact match">exact</button>
+                </div>
+                <div class="max-h-60 overflow-y-auto border border-gray-800 rounded">
+                  <div x-show="agentDialog.browseLoading" class="p-3 text-gray-500 text-xs text-center">Loading...</div>
+                  <template x-for="s in agentDialog.browseSessions" :key="s.sessionId">
+                    <div @click="agentDialog.browseSelected = agentDialog.browseSelected === s.sessionId ? null : s.sessionId; if (s.cwd) agentDialog.cwd = s.cwd; if (!agentDialog.name && s.summary) agentDialog.name = s.summary.slice(0, 30)"
+                         :class="agentDialog.browseSelected === s.sessionId ? 'bg-blue-600/20 border-l-2 border-blue-400' : 'border-l-2 border-transparent'"
+                         class="px-3 py-1.5 cursor-pointer hover:bg-gray-800/50">
+                      <div class="text-xs truncate" x-text="s.summary || s.sessionId.slice(0, 12)"></div>
+                      <div class="text-[10px] text-gray-600 mt-0.5 flex gap-3">
+                        <span class="truncate" x-text="s.cwd || ''"></span>
+                        <span class="flex-shrink-0" x-text="s.lastModified ? new Date(s.lastModified).toLocaleString() : ''"></span>
+                      </div>
                     </div>
                   </template>
+                  <div x-show="!agentDialog.browseLoading && agentDialog.browseSessions.length === 0" class="p-3 text-gray-600 text-xs text-center">No sessions found</div>
+                  <button x-show="agentDialog.browseHasMore" @click="agentDialog.browseOffset += agentDialog.browseLimit; fetchBrowseSessions(true)"
+                          class="w-full py-1.5 text-xs text-gray-500 hover:text-gray-300 hover:bg-gray-800">Load more...</button>
                 </div>
-              </template>
-              <div x-show="!browseLoading && browseSessions.length === 0" class="p-4 text-gray-600 text-sm text-center">No sessions found</div>
-              <button x-show="browseHasMore" @click="browseOffset += browseLimit; fetchBrowseSessions(true)"
-                      class="w-full py-2 text-sm text-gray-500 hover:text-gray-300 hover:bg-gray-800">Load more...</button>
+              </div>
             </div>
-            <div x-show="hasChecked" class="p-3 border-t border-gray-800">
-              <button @click="addSelected()" class="w-full px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm">
-                Add selected
-                (<span x-text="browseCheckedFolders.size + browseCheckedSessions.size"></span>)
-              </button>
+
+            <!-- Footer -->
+            <div class="p-3 border-t border-gray-800 flex gap-2">
+              <button @click="agentDialog = null" class="flex-1 px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded text-sm">Cancel</button>
+              <button @click="submitAgentDialog()" :disabled="!agentDialog.name.trim() || (agentDialog.tab === 'load' && !agentDialog.browseSelected)"
+                      class="flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 rounded text-sm">Create</button>
+            </div>
+          </div>
+
+          <!-- Right: config panel (expandable) -->
+          <div x-show="agentDialog.configOpen" class="w-[300px] border-l border-gray-800 flex flex-col overflow-y-auto bg-gray-900/80">
+            <div class="p-3 space-y-3 text-xs">
+              <div class="font-semibold text-gray-300">Agent Config</div>
+
+              <!-- Model -->
+              <div>
+                <label class="text-gray-500 block mb-1">Model</label>
+                <select x-model="agentDialog.cfgModel" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 outline-none text-xs">
+                  <option value="">(default)</option>
+                  <option value="sonnet">Sonnet</option>
+                  <option value="opus">Opus</option>
+                  <option value="haiku">Haiku</option>
+                </select>
+              </div>
+
+              <!-- Thinking + Effort -->
+              <div class="flex gap-2">
+                <div class="flex-1">
+                  <label class="text-gray-500 block mb-1">Thinking</label>
+                  <select x-model="agentDialog.cfgThinking" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 outline-none text-xs">
+                    <option value="">(default)</option>
+                    <option value="adaptive">adaptive</option>
+                    <option value="enabled">enabled</option>
+                    <option value="disabled">disabled</option>
+                  </select>
+                </div>
+                <div class="flex-1">
+                  <label class="text-gray-500 block mb-1">Effort</label>
+                  <select x-model="agentDialog.cfgEffort" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 outline-none text-xs">
+                    <option value="">(default)</option>
+                    <option value="low">low</option>
+                    <option value="medium">medium</option>
+                    <option value="high">high</option>
+                    <option value="max">max</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Permission -->
+              <div>
+                <label class="text-gray-500 block mb-1">Permission</label>
+                <select x-model="agentDialog.cfgPermission" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 outline-none text-xs">
+                  <option value="">(default)</option>
+                  <option value="bypassPermissions">bypassPermissions</option>
+                  <option value="default">default</option>
+                  <option value="acceptEdits">acceptEdits</option>
+                  <option value="plan">plan</option>
+                  <option value="dontAsk">dontAsk</option>
+                </select>
+              </div>
+
+              <!-- System Prompt (collapsible) -->
+              <div>
+                <button @click="agentDialog.cfgShowSystemPrompt = !agentDialog.cfgShowSystemPrompt" class="text-gray-400 hover:text-gray-200 flex items-center gap-1">
+                  <span x-text="agentDialog.cfgShowSystemPrompt ? '▾' : '▸'" class="w-3 text-gray-600"></span>System Prompt
+                </button>
+                <div x-show="agentDialog.cfgShowSystemPrompt" class="mt-1">
+                  <textarea x-model="agentDialog.cfgSystemPrompt" rows="4" :placeholder="'Default: Your Name is ' + (agentDialog.name || '...')"
+                            class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 outline-none text-xs resize-y"></textarea>
+                </div>
+              </div>
+
+              <!-- ENV (collapsible) -->
+              <div>
+                <button @click="agentDialog.cfgShowEnv = !agentDialog.cfgShowEnv" class="text-gray-400 hover:text-gray-200 flex items-center gap-1">
+                  <span x-text="agentDialog.cfgShowEnv ? '▾' : '▸'" class="w-3 text-gray-600"></span>ENV
+                </button>
+                <div x-show="agentDialog.cfgShowEnv" class="mt-1">
+                  <textarea x-model="agentDialog.cfgEnvText" rows="3" placeholder="KEY=value (one per line)"
+                            class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 outline-none text-xs mono resize-y"></textarea>
+                </div>
+              </div>
+
+              <!-- Advanced JSON (collapsible) -->
+              <div>
+                <button @click="agentDialog.cfgShowJson = !agentDialog.cfgShowJson; if (agentDialog.cfgShowJson) syncDialogJson()" class="text-gray-400 hover:text-gray-200 flex items-center gap-1">
+                  <span x-text="agentDialog.cfgShowJson ? '▾' : '▸'" class="w-3 text-gray-600"></span>Advanced JSON
+                </button>
+                <div x-show="agentDialog.cfgShowJson" class="mt-1 space-y-1">
+                  <textarea x-model="agentDialog.cfgJsonText" rows="8"
+                            class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 outline-none text-xs mono resize-y"></textarea>
+                  <div x-show="agentDialog.cfgJsonError" class="text-red-400 text-[10px]" x-text="agentDialog.cfgJsonError"></div>
+                  <button @click="syncDialogFromJson()" class="px-2 py-1 bg-gray-800 border border-gray-700 rounded text-gray-400 hover:text-gray-200 text-xs">Apply JSON</button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -230,33 +356,47 @@
         </div>
       </div>
     </template>
+
+    <!-- Add Folder popup -->
+    <template x-if="folderPopup">
+      <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50" @click.self="folderPopup = null" @keydown.escape.window="folderPopup = null">
+        <div class="bg-gray-900 border border-gray-700 rounded-lg w-96 p-4 space-y-3">
+          <div class="text-sm font-semibold text-gray-200">Add Folder</div>
+          <input id="folder-cwd-input" x-model="folderPopup.cwd" @keydown.enter.prevent="submitFolderPopup()" placeholder="/path/to/project"
+                 class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm mono outline-none focus:border-gray-500" />
+          <div x-show="folderPopup.loading" class="text-xs text-gray-500 text-center">Loading...</div>
+          <div x-show="!folderPopup.loading && folderPopup.folders.length > 0">
+            <div class="text-xs text-gray-500 mb-1">From existing sessions:</div>
+            <div class="max-h-40 overflow-y-auto border border-gray-800 rounded">
+              <template x-for="f in folderPopup.folders" :key="f">
+                <button @click="folderPopup.cwd = f"
+                        :class="folderPopup.cwd === f ? 'bg-blue-600/20 text-gray-200' : 'text-gray-400 hover:bg-gray-800/50'"
+                        class="w-full text-left px-3 py-1.5 text-xs truncate mono" x-text="f"></button>
+              </template>
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <button @click="folderPopup = null" class="flex-1 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-sm">Cancel</button>
+            <button @click="submitFolderPopup()" :disabled="!folderPopup.cwd.trim()"
+                    class="flex-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 rounded text-sm">Add</button>
+          </div>
+        </div>
+      </div>
+    </template>
   </div><!-- /sidebar -->
 
-  <!-- Main -->
+  <!-- ═══ Main Content ═══ -->
   <div class="flex-1 flex flex-col min-w-0">
     <!-- Header -->
     <div class="px-4 py-2 border-b border-gray-800 flex items-center gap-3 text-sm bg-gray-900/50 flex-shrink-0">
       <button @click="toggleSidebar()" class="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-xs flex-shrink-0"
               :title="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
               x-text="sidebarCollapsed ? '☰' : '◧'"></button>
-      <template x-if="panelMode">
-        <select x-model="selectedNodeId" class="bg-gray-800 text-gray-300 rounded px-2 py-1 text-xs outline-none">
-          <template x-for="n in nodes" :key="n.nodeId">
-            <option :value="n.nodeId" :disabled="!n.online" x-text="(n.online ? '● ' : '○ ') + (n.label || n.nodeId)"></option>
-          </template>
-        </select>
-      </template>
       <button @click="toggleTheme()" class="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-xs flex-shrink-0"
               :title="theme === 'light' ? 'Switch to dark' : 'Switch to light'" x-text="theme === 'light' ? '☀' : '☾'"></button>
-      <span class="text-gray-500">cwd:</span>
-      <input x-model="cwd" class="bg-transparent text-gray-300 flex-1 outline-none text-sm mono min-w-0" />
-      <select x-model="model" class="bg-gray-800 text-gray-300 rounded px-2 py-1 text-xs outline-none">
-        <option value="claude-sonnet-4.6-rt">Sonnet 4.6</option>
-        <option value="claude-opus-4.6-rt">Opus 4.6</option>
-        <option value="claude-haiku-4.5-rt">Haiku 4.5</option>
-      </select>
-      <button x-show="currentId && activeSet.has(currentId)" @click="changeModel()"
-              class="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded">Apply Model</button>
+      <span class="flex-1"></span>
+      <span x-show="currentId" class="text-gray-500 text-xs truncate" x-text="managed.find(s => s.sessionId === currentId)?.name || ''"></span>
+      <button @click="emit('config-toggle')" class="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-xs flex-shrink-0" title="Agent config">⚙</button>
     </div>
 
     <!-- Messages -->
@@ -286,11 +426,13 @@
 
     <!-- Input -->
     <div class="p-3 border-t border-gray-800 bg-gray-900/30 flex-shrink-0">
+      <div x-show="!currentId" class="text-gray-600 text-xs mb-2 text-center">Select an agent or create one from the sidebar</div>
       <div class="flex gap-2">
         <input x-model="inputText" @keydown.enter.prevent="send()"
-               :placeholder="currentId ? 'Send a message...' : 'Start a new session...'"
-               class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm mono outline-none focus:border-gray-500 min-w-0" />
-        <button @click="send()" :disabled="!inputText.trim()"
+               :placeholder="currentId ? 'Send a message...' : 'No agent selected'"
+               :disabled="!currentId"
+               class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm mono outline-none focus:border-gray-500 min-w-0 disabled:opacity-60" />
+        <button @click="send()" :disabled="!inputText.trim() || !currentId"
                 class="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 rounded text-sm">Send</button>
         <button x-show="currentId && activeSet.has(currentId)" @click="interruptSession()"
                 class="px-3 py-2 bg-red-700 hover:bg-red-600 rounded text-sm">Stop</button>
@@ -305,6 +447,127 @@
       <span x-show="currentId && activeSet.has(currentId)" class="text-green-400">active</span>
     </div>
   </div>
+
+  <!-- ═══ Right Sidebar (Agent Config) ═══ -->
+  <div x-data="agentConfig()" class="flex flex-shrink-0">
+    <!-- Resize handle -->
+    <div x-show="!collapsed" @mousedown.prevent="startResize($event)"
+         class="w-1 bg-gray-800 hover:bg-gray-700 active:bg-gray-700 cursor-col-resize flex-shrink-0"></div>
+
+    <div class="bg-gray-900 flex flex-col flex-shrink-0 overflow-hidden transition-[width] duration-200"
+         :style="`width: ${collapsed ? 0 : width}px`"
+         :class="collapsed ? '' : 'border-l border-gray-800'">
+
+      <template x-if="!session">
+        <div class="flex-1 flex items-center justify-center p-4 text-gray-600 text-xs text-center">Select an agent to configure</div>
+      </template>
+
+      <template x-if="session">
+        <div class="flex-1 overflow-y-auto">
+          <div class="p-3 space-y-3 text-xs">
+            <!-- Agent identity -->
+            <div class="font-semibold text-gray-200 truncate" x-text="session.name"></div>
+            <div class="text-gray-500 truncate text-[10px]" x-text="session.cwd"></div>
+
+            <!-- Model -->
+            <div>
+              <label class="text-gray-500 block mb-1">Model</label>
+              <select x-model="model" @change="markDirty()" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 outline-none text-xs">
+                <option value="">(default)</option>
+                <option value="sonnet">Sonnet</option>
+                <option value="opus">Opus</option>
+                <option value="haiku">Haiku</option>
+              </select>
+            </div>
+
+            <!-- Thinking + Effort -->
+            <div class="flex gap-2">
+              <div class="flex-1">
+                <label class="text-gray-500 block mb-1">Thinking</label>
+                <select x-model="thinking" @change="markDirty()" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 outline-none text-xs">
+                  <option value="">(default)</option>
+                  <option value="adaptive">adaptive</option>
+                  <option value="enabled">enabled</option>
+                  <option value="disabled">disabled</option>
+                </select>
+              </div>
+              <div class="flex-1">
+                <label class="text-gray-500 block mb-1">Effort</label>
+                <select x-model="effort" @change="markDirty()" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 outline-none text-xs">
+                  <option value="">(default)</option>
+                  <option value="low">low</option>
+                  <option value="medium">medium</option>
+                  <option value="high">high</option>
+                  <option value="max">max</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Permission -->
+            <div>
+              <label class="text-gray-500 block mb-1">Permission</label>
+              <select x-model="permissionMode" @change="markDirty()" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 outline-none text-xs">
+                <option value="">(default)</option>
+                <option value="bypassPermissions">bypassPermissions</option>
+                <option value="default">default</option>
+                <option value="acceptEdits">acceptEdits</option>
+                <option value="plan">plan</option>
+                <option value="dontAsk">dontAsk</option>
+              </select>
+            </div>
+
+            <!-- System Prompt -->
+            <div>
+              <button @click="showSystemPrompt = !showSystemPrompt" class="text-gray-400 hover:text-gray-200 flex items-center gap-1">
+                <span x-text="showSystemPrompt ? '▾' : '▸'" class="w-3 text-gray-600"></span>System Prompt
+              </button>
+              <div x-show="showSystemPrompt" class="mt-1">
+                <textarea x-model="systemPrompt" @input="markDirty()" rows="4" placeholder="Append to default system prompt..."
+                          class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 outline-none text-xs resize-y"></textarea>
+              </div>
+            </div>
+
+            <!-- ENV -->
+            <div>
+              <button @click="showEnv = !showEnv" class="text-gray-400 hover:text-gray-200 flex items-center gap-1">
+                <span x-text="showEnv ? '▾' : '▸'" class="w-3 text-gray-600"></span>ENV
+              </button>
+              <div x-show="showEnv" class="mt-1">
+                <textarea x-model="envText" @input="markDirty()" rows="3" placeholder="KEY=value (one per line)"
+                          class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 outline-none text-xs mono resize-y"></textarea>
+              </div>
+            </div>
+
+            <!-- Advanced JSON -->
+            <div>
+              <button @click="showJson = !showJson; if (showJson) syncToJson()" class="text-gray-400 hover:text-gray-200 flex items-center gap-1">
+                <span x-text="showJson ? '▾' : '▸'" class="w-3 text-gray-600"></span>Advanced JSON
+              </button>
+              <div x-show="showJson" class="mt-1 space-y-1">
+                <textarea x-model="jsonText" rows="8"
+                          class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 outline-none text-xs mono resize-y"></textarea>
+                <div x-show="jsonError" class="text-red-400 text-[10px]" x-text="jsonError"></div>
+                <button @click="saveJson()" class="px-2 py-1 bg-gray-800 border border-gray-700 rounded text-gray-400 hover:text-gray-200 text-xs">Apply JSON</button>
+              </div>
+            </div>
+
+            <!-- Save button -->
+            <button x-show="dirty" @click="save()"
+                    class="w-full px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-xs">Save Config</button>
+
+            <!-- Actions -->
+            <div class="flex gap-2 pt-2 border-t border-gray-800">
+              <button @click="compact()" :disabled="!isActive"
+                      class="flex-1 px-2 py-1.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-40 rounded text-xs">Compact</button>
+              <button @click="reload()" :disabled="!isActive"
+                      class="flex-1 px-2 py-1.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-40 rounded text-xs">Reload</button>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+
   </div>
   </template><!-- /main app template -->
 

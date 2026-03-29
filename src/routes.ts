@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { Router } from "./router";
 import {
-  addManaged, listManaged, removeManaged,
+  addManaged, listManaged, removeManaged, updateManaged,
   listFolders, addFolder, removeFolder, renameFolder,
 } from "./managed";
 import { verifyToken, verifyCookie, createSessionCookie, isEnabled as authEnabled } from "./auth";
@@ -78,6 +78,7 @@ export function createApp(router: Router): Hono {
     try {
       return c.json(await router.dispatch(nodeId, "query", {
         prompt: body.prompt, cwd: body.cwd, model: body.model, sessionId: body.sessionId,
+        claudeParams: body.claudeParams,
       }));
     } catch (err: any) {
       return c.json({ error: err.message }, 500);
@@ -210,13 +211,21 @@ export function createApp(router: Router): Hono {
   app.post("/api/managed", async (c) => {
     const body = await c.req.json();
     const id = typeof body?.id === "string" ? body.id : "";
+    const name = typeof body?.name === "string" ? body.name.trim() : "";
     const cwd = typeof body?.cwd === "string" ? body.cwd : "";
-    if (!id || !cwd) return c.json({ error: "id and cwd required" }, 400);
+    if (!id || !cwd || !name) return c.json({ error: "id, name, and cwd required" }, 400);
     return c.json(addManaged({
-      id, cwd,
+      id, name, cwd,
       nodeId: typeof body?.nodeId === "string" ? body.nodeId : undefined,
       createdAt: typeof body?.createdAt === "number" ? body.createdAt : Date.now(),
+      params: body?.params || undefined,
     }));
+  });
+
+  app.patch("/api/managed/:id", async (c) => {
+    const body = await c.req.json();
+    const result = updateManaged(c.req.param("id"), { params: body?.params });
+    return result ? c.json(result) : c.json({ error: "not found" }, 404);
   });
 
   app.delete("/api/managed/:id", (c) => c.json(removeManaged(c.req.param("id"))));
