@@ -83,8 +83,8 @@ if (subcommand === "help" || subArgs.includes("--help") || subArgs.includes("-h"
   agent-link list   [--url <url>]           List managed agents in a table
   agent-link inspect <name|id>... [-n N] [--url]  Inspect agent details + last N messages (default: 1)
   agent-link send <name|id> <msg> [--url]   Send message to an agent
-  agent-link bio [name|id]                         Ask agent to write its own one-line bio and save it
-  agent-link intro [name|id]                       Ask agent to write its own intro (2-4 sentences) and save it
+  agent-link bio [name|id] <text>                  Set one-line bio for an agent (name|id required outside a session)
+  agent-link intro [name|id] <text>                Set intro paragraph for an agent
   agent-link skill [--team-work]                   Print inter-agent teamwork cheatsheet (default)
   agent-link skill --setup                         Print installation and configuration guide
 
