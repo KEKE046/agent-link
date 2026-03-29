@@ -1,5 +1,23 @@
 # Agent Link - Changes
 
+## v0.8.0
+
+- Replaced sidebar New/Load buttons with contextual "+" on node headers
+- Added "Add" modal with two tabs: Load Existing (browse with checkboxes) and New Session
+- Added managed folders: folders persist in sidebar even without sessions
+  - Backend: `ManagedFolder` type, `/api/managed-folders` CRUD endpoints
+  - `groupedSessions` merges managed folders into sidebar tree
+- Folder "…" context menu with Remove (removes folder + all sessions under it)
+- Browse tab: already-managed sessions/folders shown as checked + disabled
+- Smart folder clicks: 1 session → open directly, multiple → expand
+- Single folder in browse results auto-expands
+- Arrow (▸/▾) and folder name are separate click targets
+- Session count `(N)` only shown when N > 1
+- Unified sidebar action buttons (`.sidebar-btn` CSS, 24px, vertically aligned)
+- Light theme: hover bg fix (`#f3f4f6` → `#e5e7eb`), sidebar button light-theme overrides
+- Removed VSCode buttons, node approve, admin secret from frontend
+- Removed `vscode-ui.js` from assets
+
 ## v0.7.0
 
 - Refactored frontend into modular components: `app.js`, `sidebar.js`, `vscode-ui.js`, `renderer.js`

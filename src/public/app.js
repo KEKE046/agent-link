@@ -128,6 +128,8 @@ function app() {
     createSession(detail) {
       if (detail.cwd) this.cwd = detail.cwd;
       if (detail.nodeId) this.selectedNodeId = detail.nodeId;
+      // Ensure the folder is tracked so it appears in sidebar
+      if (detail.cwd) this.addFolder({ cwd: detail.cwd, nodeId: detail.nodeId });
       this.newSession();
     },
 
@@ -161,13 +163,18 @@ function app() {
 
     async removeFolder(detail) {
       const { cwd, nodeId } = detail;
-      this.managedFolders = this.managedFolders.filter(f => !(f.cwd === cwd && (f.nodeId || '') === (nodeId || '')));
+      const nid = nodeId || '';
+      // Remove folder from managedFolders
+      this.managedFolders = this.managedFolders.filter(f => !(f.cwd === cwd && (f.nodeId || '') === nid));
       try {
         await fetch('/api/managed-folders', {
           method: 'DELETE', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ cwd, nodeId }),
         });
       } catch {}
+      // Also remove all managed sessions under this folder
+      const toRemove = this.managed.filter(s => s.cwd === cwd && (s.nodeId || '') === nid);
+      for (const s of toRemove) this.removeManaged(s.sessionId);
     },
 
     async switchSession(id) {
