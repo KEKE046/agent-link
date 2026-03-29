@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import * as sessions from "./sessions";
-import { addManaged, listManaged, removeManaged, listFolders, addFolder, removeFolder } from "./managed";
+import { addManaged, listManaged, removeManaged, listFolders, addFolder, removeFolder, renameFolder } from "./managed";
 import {
   getActiveServerById,
   getInstallCommand,
@@ -207,6 +207,16 @@ app.delete("/api/managed-folders", async (c) => {
   if (!cwd) return c.json({ error: "cwd required" }, 400);
   return c.json(
     removeFolder(cwd, typeof body?.nodeId === "string" ? body.nodeId : undefined)
+  );
+});
+
+app.patch("/api/managed-folders", async (c) => {
+  const body = await c.req.json();
+  const cwd = typeof body?.cwd === "string" ? body.cwd : "";
+  if (!cwd) return c.json({ error: "cwd required" }, 400);
+  const label = typeof body?.label === "string" ? body.label.trim() : "";
+  return c.json(
+    renameFolder(cwd, typeof body?.nodeId === "string" ? body.nodeId : undefined, label)
   );
 });
 

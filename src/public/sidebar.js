@@ -11,6 +11,7 @@ function sidebar() {
     addModal: null,  // {nodeId, tab: 'browse'|'add'}
     newCwd: '',
     folderMenu: null,
+    renamePopup: null,  // {cwd, nodeId, label}
     browseSessions: [],
     browseLoading: false,
     browseFilter: '',
@@ -32,6 +33,13 @@ function sidebar() {
         const nid = s.nodeId || '(local)';
         this.expandGroup('node:' + nid);
         this.expandGroup(nid + ':' + (s.cwd || this.cwd));
+      });
+      // Auto-expand when pendingNew is set
+      this.$watch('pendingNew', (p) => {
+        if (!p) return;
+        const nid = p.nodeId || '(local)';
+        this.expandGroup('node:' + nid);
+        this.expandGroup(nid + ':' + (p.cwd || this.cwd));
       });
     },
 
@@ -61,18 +69,29 @@ function sidebar() {
       for (const f of this.managedFolders) {
         const nid = f.nodeId || '(local)';
         const key = nid + ':' + f.cwd;
-        if (!cwdMap.has(key)) cwdMap.set(key, { nodeId: nid, cwd: f.cwd, sessions: [], isFolder: true });
+        if (!cwdMap.has(key)) cwdMap.set(key, { nodeId: nid, cwd: f.cwd, label: f.label || '', sessions: [], isFolder: true });
       }
       for (const s of this.managed) {
         const nid = s.nodeId || '(local)';
         const key = nid + ':' + (s.cwd || '(unknown)');
-        if (!cwdMap.has(key)) cwdMap.set(key, { nodeId: nid, cwd: s.cwd || '(unknown)', sessions: [] });
+        if (!cwdMap.has(key)) cwdMap.set(key, { nodeId: nid, cwd: s.cwd || '(unknown)', label: this.getFolderLabel(s.cwd, nid), sessions: [] });
         cwdMap.get(key).sessions.push(s);
       }
       for (const [, group] of cwdMap) {
         if (!nodeMap.has(group.nodeId))
           nodeMap.set(group.nodeId, { nodeId: group.nodeId, label: group.nodeId, approved: true, cwdGroups: [] });
         nodeMap.get(group.nodeId).cwdGroups.push(group);
+      }
+      // Inject pending new session placeholder
+      if (this.pendingNew) {
+        const nid = this.pendingNew.nodeId || '(local)';
+        const pcwd = this.pendingNew.cwd || this.cwd;
+        if (!nodeMap.has(nid))
+          nodeMap.set(nid, { nodeId: nid, label: nid, approved: true, cwdGroups: [] });
+        const node = nodeMap.get(nid);
+        let cwdGroup = node.cwdGroups.find(g => g.cwd === pcwd);
+        if (!cwdGroup) { cwdGroup = { nodeId: nid, cwd: pcwd, sessions: [] }; node.cwdGroups.push(cwdGroup); }
+        cwdGroup.sessions.unshift({ sessionId: '__pending__', label: '(New Session)', cwd: pcwd, nodeId: this.pendingNew.nodeId, _pending: true });
       }
       return [...nodeMap.values()];
     },
@@ -129,6 +148,24 @@ function sidebar() {
 
     isSessionManaged(sessionId) {
       return this.managed.some(s => s.sessionId === sessionId);
+    },
+
+    getFolderLabel(cwd, nodeId) {
+      const nid = (!nodeId || nodeId === '(local)') ? '' : nodeId;
+      const f = this.managedFolders.find(f => f.cwd === cwd && (f.nodeId || '') === nid);
+      return f?.label || '';
+    },
+
+    openRenamePopup(cwd, nodeId) {
+      this.renamePopup = { cwd, nodeId, label: this.getFolderLabel(cwd, nodeId) };
+      this.$nextTick(() => document.querySelector('#rename-input')?.focus());
+    },
+
+    submitRename() {
+      if (!this.renamePopup) return;
+      const { cwd, nodeId, label } = this.renamePopup;
+      emit('folder-rename', { cwd, nodeId: nodeId === '(local)' ? undefined : nodeId, label: label.trim() });
+      this.renamePopup = null;
     },
 
     // --- Add modal ---

@@ -43,6 +43,7 @@
      @session-add.window="addManaged($event.detail)"
      @folder-add.window="addFolder($event.detail)"
      @folder-remove.window="removeFolder($event.detail)"
+     @folder-rename.window="renameFolder($event.detail)"
      @data-refresh.window="refreshData()">
 
   <!-- Sidebar -->
@@ -71,13 +72,18 @@
                     <div class="pl-7 pr-3 py-1 flex items-center gap-1.5 hover:bg-gray-800/50 text-xs text-gray-400 sticky bg-gray-900 border-b border-gray-800/30" style="top:1.5rem">
                       <span @click="toggleGroup(n.nodeId + ':' + g.cwd)" x-text="expandedGroups.has(n.nodeId + ':' + g.cwd) ? '▾' : '▸'" class="text-gray-600 w-3 cursor-pointer"></span>
                       <span @click="g.sessions.length === 1 ? emit('session-switch', g.sessions[0].sessionId) : toggleGroup(n.nodeId + ':' + g.cwd)"
-                            class="truncate flex-1 font-medium cursor-pointer" x-text="g.cwd"></span>
+                            class="truncate flex-1 font-medium cursor-pointer" :title="g.cwd"
+                            x-text="g.label ? '[' + g.label + ']' : g.cwd"></span>
                       <span x-show="g.sessions.length > 1" class="text-gray-600 text-[10px]" x-text="'(' + g.sessions.length + ')'"></span>
                       <div class="relative">
                         <button @click.stop="folderMenu = folderMenu === (n.nodeId + ':' + g.cwd) ? null : (n.nodeId + ':' + g.cwd)"
                                 class="sidebar-btn">…</button>
                         <div x-show="folderMenu === (n.nodeId + ':' + g.cwd)" @click.outside="folderMenu = null"
                              class="absolute right-0 top-full mt-0.5 bg-gray-800 border border-gray-700 rounded shadow-lg py-1 z-30 min-w-[6rem]">
+                          <button @click.stop="emit('session-create', {cwd: g.cwd, nodeId: n.nodeId === '(local)' ? undefined : n.nodeId}); folderMenu = null"
+                                  class="w-full text-left px-3 py-1 text-xs text-gray-300 hover:bg-gray-700">Add Session</button>
+                          <button @click.stop="openRenamePopup(g.cwd, n.nodeId); folderMenu = null"
+                                  class="w-full text-left px-3 py-1 text-xs text-gray-300 hover:bg-gray-700">Rename</button>
                           <button @click.stop="emit('folder-remove', {cwd: g.cwd, nodeId: n.nodeId === '(local)' ? undefined : n.nodeId}); folderMenu = null"
                                   class="w-full text-left px-3 py-1 text-xs text-gray-300 hover:bg-gray-700">Remove</button>
                         </div>
@@ -86,13 +92,13 @@
                     <template x-if="expandedGroups.has(n.nodeId + ':' + g.cwd)">
                       <div>
                         <template x-for="s in g.sessions" :key="s.sessionId">
-                          <div @click="emit('session-switch', s.sessionId)"
-                               :class="currentId === s.sessionId ? 'bg-gray-800 border-l-2 border-blue-400' : 'border-l-2 border-transparent'"
+                          <div @click="s._pending ? null : emit('session-switch', s.sessionId)"
+                               :class="s._pending ? 'border-l-2 border-yellow-400 bg-gray-800/50' : currentId === s.sessionId ? 'bg-gray-800 border-l-2 border-blue-400' : 'border-l-2 border-transparent'"
                                class="pl-10 pr-3 py-1 cursor-pointer hover:bg-gray-800/50 group flex items-center gap-2"
                                :style="!isNodeOnline(n.nodeId) ? 'opacity:0.5' : ''">
-                            <span class="w-2 h-2 rounded-full flex-shrink-0" :class="activeSet.has(s.sessionId) ? 'bg-green-400 animate-pulse' : 'bg-gray-600'"></span>
-                            <span class="text-sm truncate flex-1" x-text="s.label || s.sessionId.slice(0, 8)"></span>
-                            <button @click.stop="emit('session-remove', s.sessionId)"
+                            <span class="w-2 h-2 rounded-full flex-shrink-0" :class="s._pending ? 'bg-yellow-400' : activeSet.has(s.sessionId) ? 'bg-green-400 animate-pulse' : 'bg-gray-600'"></span>
+                            <span class="text-sm truncate flex-1" :class="s._pending ? 'text-yellow-400 italic' : ''" x-text="s.label || s.sessionId.slice(0, 8)"></span>
+                            <button x-show="!s._pending" @click.stop="emit('session-remove', s.sessionId)"
                                     class="sidebar-btn sidebar-btn-danger opacity-0 group-hover:opacity-100">x</button>
                           </div>
                         </template>
@@ -191,6 +197,21 @@
         </div>
       </div>
     </template>
+
+    <!-- Rename popup -->
+    <template x-if="renamePopup">
+      <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50" @click.self="renamePopup = null" @keydown.escape.window="renamePopup = null">
+        <div class="bg-gray-900 border border-gray-700 rounded-lg w-80 p-4 space-y-3">
+          <div class="text-xs text-gray-400 truncate" x-text="renamePopup.cwd"></div>
+          <input id="rename-input" x-model="renamePopup.label" @keydown.enter.prevent="submitRename()" placeholder="Display name (empty to reset)"
+                 class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm mono outline-none focus:border-gray-500" />
+          <div class="flex gap-2">
+            <button @click="renamePopup = null" class="flex-1 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-sm">Cancel</button>
+            <button @click="submitRename()" class="flex-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-sm">Save</button>
+          </div>
+        </div>
+      </div>
+    </template>
   </div><!-- /sidebar -->
 
   <!-- Main -->
@@ -212,9 +233,9 @@
       <span class="text-gray-500">cwd:</span>
       <input x-model="cwd" class="bg-transparent text-gray-300 flex-1 outline-none text-sm mono min-w-0" />
       <select x-model="model" class="bg-gray-800 text-gray-300 rounded px-2 py-1 text-xs outline-none">
-        <option value="claude-sonnet-4-6">Sonnet 4.6</option>
-        <option value="claude-opus-4-6">Opus 4.6</option>
-        <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
+        <option value="claude-sonnet-4.6-rt">Sonnet 4.6</option>
+        <option value="claude-opus-4.6-rt">Opus 4.6</option>
+        <option value="claude-haiku-4.5-rt">Haiku 4.5</option>
       </select>
       <button x-show="currentId && activeSet.has(currentId)" @click="changeModel()"
               class="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded">Apply Model</button>

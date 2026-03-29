@@ -10,6 +10,7 @@ export interface ManagedSession {
 export interface ManagedFolder {
   cwd: string;
   nodeId?: string;
+  label?: string;
 }
 
 function readAll(): ManagedSession[] {
@@ -61,5 +62,17 @@ export function removeFolder(cwd: string, nodeId?: string): ManagedFolder[] {
     (f) => !(f.cwd === cwd && (f.nodeId || "") === (nodeId || ""))
   );
   save("managed-folders", all);
+  return all;
+}
+
+export function renameFolder(cwd: string, nodeId: string | undefined, label: string): ManagedFolder[] {
+  const all = readFolders();
+  const f = all.find(
+    (f) => f.cwd === cwd && (f.nodeId || "") === (nodeId || "")
+  );
+  if (f) {
+    f.label = label || undefined;
+    save("managed-folders", all);
+  }
   return all;
 }

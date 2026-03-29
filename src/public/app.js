@@ -10,7 +10,7 @@ function app() {
     currentId: null,
     inputText: '',
     cwd: localStorage.getItem('agent-link:cwd') || '',
-    model: localStorage.getItem('agent-link:model') || 'claude-sonnet-4-6',
+    model: localStorage.getItem('agent-link:model') || 'claude-sonnet-4.6-rt',
     activeSet: new Set(),
     eventSource: null,
     seenUuids: new Set(),
@@ -31,6 +31,9 @@ function app() {
     panelMode: false,
     nodes: [],
     selectedNodeId: localStorage.getItem('agent-link:nodeId') || '',
+
+    // Pending new session placeholder (shown in sidebar with yellow dot)
+    pendingNew: null,  // {cwd, nodeId} or null
 
     init() {
       Alpine.store('active', false);
@@ -130,6 +133,7 @@ function app() {
       if (detail.nodeId) this.selectedNodeId = detail.nodeId;
       // Ensure the folder is tracked so it appears in sidebar
       if (detail.cwd) this.addFolder({ cwd: detail.cwd, nodeId: detail.nodeId });
+      this.pendingNew = { cwd: detail.cwd || this.cwd, nodeId: detail.nodeId };
       this.newSession();
     },
 
@@ -177,8 +181,23 @@ function app() {
       for (const s of toRemove) this.removeManaged(s.sessionId);
     },
 
+    async renameFolder(detail) {
+      const { cwd, nodeId, label } = detail;
+      const nid = nodeId || '';
+      const f = this.managedFolders.find(f => f.cwd === cwd && (f.nodeId || '') === nid);
+      if (f) f.label = label || undefined;
+      this.managedFolders = [...this.managedFolders];
+      try {
+        await fetch('/api/managed-folders', {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cwd, nodeId, label }),
+        });
+      } catch {}
+    },
+
     async switchSession(id) {
       if (this.currentId === id) return;
+      this.pendingNew = null;
       this.currentId = id;
       this.msg('clear');
       this.seenUuids = new Set();
@@ -231,6 +250,7 @@ function app() {
 
         if (isNew) {
           this.currentId = data.sessionId;
+          this.pendingNew = null;
           const entry = { sessionId: data.sessionId, cwd: this.cwd, model: this.model, label: prompt.slice(0, 40) };
           if (nodeId) entry.nodeId = nodeId;
           this.addManaged(entry);
