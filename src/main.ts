@@ -20,7 +20,7 @@ import * as logger from "./logger";
 
 const args = process.argv.slice(2);
 
-const SUBCOMMANDS = new Set(["server", "node", "status", "list", "inspect", "send", "skill", "help"]);
+const SUBCOMMANDS = new Set(["server", "node", "status", "list", "inspect", "send", "bio", "intro", "skill", "help"]);
 const subcommand = SUBCOMMANDS.has(args[0]) ? args[0] : null;
 const subArgs = subcommand ? args.slice(1) : args;
 
@@ -30,6 +30,18 @@ function getArg(a: string[], flag: string): string | undefined {
 }
 
 // --- Introspection commands ---
+
+if (subcommand === "bio") {
+  const { runBio } = await import("./cli/selfwrite");
+  await runBio(subArgs);
+  process.exit(0);
+}
+
+if (subcommand === "intro") {
+  const { runIntro } = await import("./cli/selfwrite");
+  await runIntro(subArgs);
+  process.exit(0);
+}
 
 if (subcommand === "skill") {
   const { runSkill } = await import("./cli/skill");
@@ -71,7 +83,9 @@ if (subcommand === "help" || subArgs.includes("--help") || subArgs.includes("-h"
   agent-link list   [--url <url>]           List managed agents in a table
   agent-link inspect <name|id>... [-n N] [--url]  Inspect agent details + last N messages (default: 1)
   agent-link send <name|id> <msg> [--url]   Send message to an agent
-  agent-link skill                          Print agent-link skill/cheatsheet
+  agent-link bio [name|id]                         Ask agent to write its own one-line bio and save it
+  agent-link intro [name|id]                       Ask agent to write its own intro (2-4 sentences) and save it
+  agent-link skill                                 Print agent-link skill/cheatsheet
 
 Server options:
   --port <n>        HTTP port (default: 3456)

@@ -114,6 +114,7 @@ function app() {
           this.managed = ((await res.json()) || []).map(item => ({
             sessionId: item.id, name: item.name || item.id?.slice(0, 12) || '',
             bio: item.bio || undefined,
+            intro: item.intro || undefined,
             cwd: item.cwd, nodeId: item.nodeId, createdAt: item.createdAt,
             params: item.params || {},
           }));

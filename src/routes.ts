@@ -239,6 +239,7 @@ export function createApp(router: Router): Hono {
     const patch: any = {};
     if (body?.params !== undefined) patch.params = body.params;
     if (typeof body?.bio === "string") patch.bio = body.bio.trim();
+    if (typeof body?.intro === "string") patch.intro = body.intro.trim();
     const result = updateManaged(c.req.param("id"), patch);
     return result ? c.json(result) : c.json({ error: "not found" }, 404);
   });

@@ -21,6 +21,8 @@ agent-link inspect <name|id>         # details + last message (default)
 agent-link inspect <name|id> -n 5   # details + last 5 messages
 agent-link inspect <name|id> -n 0   # details only, no messages
 agent-link send <name|id> <message>  # send message, stream response to stdout
+agent-link bio [name|id]             # ask agent to write its one-line bio (saves it)
+agent-link intro [name|id]           # ask agent to write its intro paragraph (saves it)
 \`\`\`
 
 Names are matched case-insensitively; exact name wins over prefix match.
@@ -75,6 +77,29 @@ agent-link inspect CodeHelper -n 0    # details only
 \`\`\`
 
 Use the session ID to reference the exact agent when name collisions exist.
+
+## Agent Bio and Intro
+
+Each agent has two optional self-description fields:
+
+- **bio** — one sentence: what problems to bring to this agent
+- **intro** — 2-4 sentences: deeper self-description
+
+To generate and save your own (the model writes it based on its own context):
+
+\`\`\`sh
+agent-link bio      # uses AGENT_LINK_AGENT_NAME to find yourself
+agent-link intro
+\`\`\`
+
+Or for another agent:
+
+\`\`\`sh
+agent-link bio CodeHelper
+agent-link intro CodeHelper
+\`\`\`
+
+Bio is visible in \`agent-link list\`. Both are visible in \`agent-link inspect\`.
 
 ## Architecture (brief)
 

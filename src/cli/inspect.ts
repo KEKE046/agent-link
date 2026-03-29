@@ -76,6 +76,10 @@ export async function runInspect(args: string[]) {
 
     console.log(`Name:      ${agent.name}`);
     if (agent.bio) console.log(`Bio:       ${agent.bio}`);
+    if (agent.intro) {
+      console.log(`Intro:`);
+      for (const line of agent.intro.split("\n")) console.log(`           ${line}`);
+    }
     console.log(`Session:   ${agent.id}`);
     console.log(`Node:      ${agent.nodeId || "(local)"}`);
     console.log(`CWD:       ${agent.cwd}`);

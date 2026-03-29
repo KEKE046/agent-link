@@ -15,6 +15,7 @@ function agentConfig() {
 
     // Graphical controls (synced with JSON)
     bio: '',
+    intro: '',
     model: '',
     thinking: '',
     effort: '',
@@ -29,6 +30,7 @@ function agentConfig() {
     showSystemPrompt: false,
     showEnv: false,
     showJson: false,
+    showIntro: false,
 
     init() {
       this.$watch('collapsed', (v) => localStorage.setItem('agent-link:config-collapsed', String(v)));
@@ -55,6 +57,7 @@ function agentConfig() {
     loadFromSession() {
       const p = this.params;
       this.bio = this.session?.bio || '';
+      this.intro = this.session?.intro || '';
       this.model = p.model || '';
       this.thinking = typeof p.thinking === 'object' ? (p.thinking.type || '') : '';
       this.effort = p.effort || '';
@@ -152,14 +155,16 @@ function agentConfig() {
       if (!this.session) return;
       const params = { claude: this.buildParams() };
       const bio = this.bio.trim();
+      const intro = this.intro.trim();
       try {
         await fetch(`/api/managed/${encodeURIComponent(this.session.sessionId)}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ params, bio: bio || '' }),
+          body: JSON.stringify({ params, bio: bio || '', intro: intro || '' }),
         });
         this.session.params = params;
         if (bio) this.session.bio = bio; else delete this.session.bio;
+        if (intro) this.session.intro = intro; else delete this.session.intro;
         this.dirty = false;
         emit('config-save', { sessionId: this.session.sessionId, params });
       } catch {}
