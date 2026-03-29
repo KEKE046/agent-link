@@ -49,8 +49,9 @@ if (noLocal && !acceptNodes && !connectTo) {
 
 if (connectTo) {
   // ---- Node-only mode ----
-  const machineId = getMachineId();
-  const label = getArg("--name") || Bun.env.NODE_LABEL || machineId;
+  const nameArg = getArg("--name") || Bun.env.NODE_LABEL;
+  const machineId = nameArg ? `${getMachineId()}-${nameArg}` : getMachineId();
+  const label = nameArg || machineId;
   console.log(`[node] Machine ID: ${machineId}`);
   console.log(`[node] Name: ${label}`);
   console.log(`[node] Connecting to: ${connectTo}`);
