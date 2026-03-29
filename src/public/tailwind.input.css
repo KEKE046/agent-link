@@ -140,7 +140,7 @@ body.light-theme .task-note-summary { color: #334155; }
 body.light-theme .process-body { border-left-color: rgba(156, 163, 175, 0.6); }
 body.light-theme .tool-details > summary::before { color: #6b7280; }
 body.light-theme .border-gray-800, body.light-theme .border-gray-800\/50, body.light-theme .border-gray-800\/30 { border-color: #d1d5db !important; }
-body.light-theme .bg-gray-950, body.light-theme .bg-gray-900, body.light-theme .bg-gray-900\/50, body.light-theme .bg-gray-900\/30, body.light-theme .bg-gray-900\/80 { background-color: #f5f5f5 !important; }
+body.light-theme .bg-gray-950, body.light-theme .bg-gray-900, body.light-theme .bg-gray-900\/80, body.light-theme .bg-gray-900\/50, body.light-theme .bg-gray-900\/30, body.light-theme .bg-gray-900\/20 { background-color: #f5f5f5 !important; }
 body.light-theme .bg-gray-800, body.light-theme .bg-gray-800\/50, body.light-theme .bg-gray-700 { background-color: #ffffff !important; }
 body.light-theme .hover\:bg-gray-800:hover, body.light-theme .hover\:bg-gray-800\/50:hover, body.light-theme .hover\:bg-gray-700:hover, body.light-theme .hover\:bg-gray-600:hover { background-color: #e5e7eb !important; }
 body.light-theme .text-gray-100, body.light-theme .text-gray-300, body.light-theme .text-gray-200, body.light-theme .text-gray-400 { color: #111827 !important; }
