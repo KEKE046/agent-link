@@ -1,18 +1,14 @@
 {
   "name": "agent-link",
-  "version": "0.6.0",
+  "version": "0.9.0",
   "type": "module",
   "scripts": {
-    "dev": "NODE_ENV=development bunx @tailwindcss/cli -i src/public/tailwind.input.css -o src/public/styles.css --watch & NODE_ENV=development bun --watch src/server.ts",
-    "dev:panel": "NODE_ENV=development bunx @tailwindcss/cli -i src/public/tailwind.input.css -o src/public/styles.css --watch & NODE_ENV=development bun --watch src/panel/server.ts",
-    "dev:node": "bun --watch src/node/main.ts",
+    "dev": "NODE_ENV=development bunx @tailwindcss/cli -i src/public/tailwind.input.css -o src/public/styles.css --watch & NODE_ENV=development bun --watch src/main.ts",
+    "dev:accept-nodes": "NODE_ENV=development bunx @tailwindcss/cli -i src/public/tailwind.input.css -o src/public/styles.css --watch & NODE_ENV=development bun --watch src/main.ts -- --accept-nodes",
+    "dev:node": "bun --watch src/main.ts -- --connect-to",
     "build:css": "bunx @tailwindcss/cli -i src/public/tailwind.input.css -o src/public/styles.css --minify",
-    "build": "bun run build:css && bun build src/server.ts --outdir dist --target bun",
-    "build:panel": "bun run build:css && bun build src/panel/server.ts --outdir dist --target bun --outfile dist/panel.js",
-    "build:node": "bun build src/node/main.ts --outdir dist --target bun --outfile dist/node.js",
-    "build:binary": "bun run build:css && bun build src/server.ts --compile --outfile dist/agent-link",
-    "build:binary:panel": "bun run build:css && bun build src/panel/server.ts --compile --outfile dist/agent-link-panel",
-    "build:binary:node": "bun build src/node/main.ts --compile --outfile dist/agent-link-node"
+    "build": "bun run build:css && bun build src/main.ts --outdir dist --target bun",
+    "build:binary": "bun run build:css && bun build src/main.ts --compile --outfile dist/agent-link"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "latest",

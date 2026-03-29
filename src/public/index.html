@@ -1,3 +1,25 @@
+<!--
+  Agent Link — 前端模块结构
+  ═══════════════════════════════════════════════════
+  index.html     本文件，HTML 骨架 + Alpine 模板
+  app.js         核心状态、session 生命周期、SSE、send/switch/interrupt
+  sidebar.js     侧边栏：分组、展开折叠、Add 弹窗（New/Browse）、节点管理
+  renderer.js    消息渲染组件 + Alpine messages 组件
+
+  组件通信：
+    emit(name, detail) → window CustomEvent，所有组件统一用
+    sidebar → app:  session-switch, session-create, session-remove, session-add,
+                    folder-add, folder-remove, data-refresh
+    app → sidebar:  通过响应式状态 (currentId, managed, managedFolders, activeSet, nodes)
+    sidebar 自动展开:  $watch('currentId')
+
+  样式：tailwind.input.css → styles.css (bunx @tailwindcss/cli 编译)
+
+  改动须知：
+    - 改模板时同步检查对应 JS 的 emit/状态引用
+    - 改 JS 事件名时全局搜索 emit('xxx') 和 @xxx.window
+    - 加新 public 文件时更新 src/assets.ts
+-->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,299 +29,221 @@
   <link rel="stylesheet" href="/styles.css">
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="/renderer.js"></script>
+  <script src="/app.js"></script>
+  <script src="/sidebar.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
-  <style>
-    [x-cloak] { display: none !important; }
-    .mono { font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace; }
-    :root {
-      --assistant-message-color: #e5e7eb;
-      --assistant-message-bg: rgba(31, 41, 55, 0.2);
-      --user-message-color: #22c55e;
-      --user-prefix-color: rgba(34, 197, 94, 0.7);
-      --user-summary-color: #86efac;
-      --user-summary-hover-bg: rgba(34, 197, 94, 0.08);
-    }
-    ::-webkit-scrollbar { width: 6px; height: 0; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
-    @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
-    .cursor-blink { animation: blink 1s step-end infinite; }
-    /* Markdown styles */
-    .md-content p { margin: 0.25rem 0; }
-    .md-content pre { background: #1a1a2e; border-radius: 0.375rem; padding: 0.75rem; margin: 0.5rem 0; overflow-x: auto; }
-    .md-content code { font-family: inherit; font-size: 0.85em; }
-    .md-content :not(pre) > code { background: #1a1a2e; padding: 0.1em 0.35em; border-radius: 0.25rem; }
-    .md-content ul, .md-content ol { padding-left: 1.5em; margin: 0.25rem 0; }
-    .md-content ul { list-style: disc; }
-    .md-content ol { list-style: decimal; }
-    .md-content li { margin: 0.1rem 0; }
-    .md-content table { border-collapse: collapse; margin: 0.5rem 0; }
-    .md-content th, .md-content td { border: 1px solid #374151; padding: 0.25rem 0.5rem; text-align: left; }
-    .md-content th { background: #1f2937; }
-    .md-content blockquote { border-left: 3px solid #374151; padding-left: 0.75rem; color: #9ca3af; margin: 0.25rem 0; }
-    .md-content h1, .md-content h2, .md-content h3 { font-weight: 600; margin: 0.5rem 0 0.25rem; }
-    .md-content h1 { font-size: 1.25em; }
-    .md-content h2 { font-size: 1.1em; }
-    .md-content h3 { font-size: 1em; }
-    .md-content a { color: #60a5fa; text-decoration: underline; }
-    .md-content hr { border-color: #374151; margin: 0.5rem 0; }
-    /* Collapsible tool details */
-    .tool-details > summary { list-style: none; }
-    .tool-details > summary::-webkit-details-marker { display: none; }
-    .tool-details > summary::before { content: '▸ '; font-size: 0.75em; color: #4b5563; }
-    .tool-details[open] > summary::before { content: '▾ '; }
-    /* Prevent horizontal overflow */
-    .tool-line { overflow-wrap: anywhere; }
-    .tool-item { overflow: hidden; }
-    .process-summary { color: #6b7280; }
-    .process-body { margin-left: 0.25rem; border-left: 1px solid rgba(55, 65, 81, 0.4); padding-left: 0.5rem; }
-    .tool-kind { color: #f59e0b; }
-    .tool-kind-bash { color: #eab308; }
-    .tool-kind-read { color: #60a5fa; }
-    .tool-kind-write { color: #34d399; }
-    .tool-kind-edit { color: #fb923c; }
-    .tool-kind-search { color: #a78bfa; }
-    .tool-kind-web { color: #38bdf8; }
-    .tool-kind-agent { color: #818cf8; }
-    .tool-kind-default { color: #fbbf24; }
-    .tool-text { color: #d1d5db; }
-    .tool-path { color: #9ca3af; }
-    .tool-meta { color: #6b7280; }
-    .tool-output { color: #6b7280; }
-    .tool-group-summary { color: rgba(250, 204, 21, 0.7); }
-    .message-row { max-width: 100%; }
-    .message-content { width: 100%; padding: 0.35rem 0.15rem; border: 0; border-radius: 0; }
-    .assistant-message { color: var(--assistant-message-color); background: var(--assistant-message-bg); }
-    .user-message-content { color: var(--user-message-color); white-space: pre-wrap; overflow-wrap: anywhere; }
-    .user-message-details > summary { list-style: none; color: var(--user-summary-color); cursor: pointer; user-select: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0.2rem 0.15rem; }
-    .user-message-details > summary::-webkit-details-marker { display: none; }
-    .user-message-details > summary::before { content: '▸ '; font-size: 0.75em; color: #4b5563; }
-    .user-message-details[open] > summary::before { content: '▾ '; }
-    .user-message-details > summary:hover { background: var(--user-summary-hover-bg); }
-    .user-message-details > summary:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; border-radius: 0.2rem; }
-    .message-prefix { color: var(--user-prefix-color); }
-    .task-note { margin: 0.35rem 0; border: 1px solid rgba(148, 163, 184, 0.5); border-radius: 0.375rem; padding: 0.35rem 0.5rem; font-size: 0.8em; background: rgba(15, 23, 42, 0.5); }
-    .task-note-tag { display: inline-block; margin-right: 0.45rem; color: #f59e0b; font-weight: 600; }
-    .task-note-summary { color: #cbd5e1; }
-    body.light-theme { background: #f3f4f6; color: #111827; }
-    body.light-theme .md-content pre { background: #e5e7eb; color: #111827; }
-    body.light-theme .md-content :not(pre) > code { background: #e5e7eb; color: #111827; }
-    body.light-theme .md-content th, body.light-theme .md-content td { border-color: #d1d5db; }
-    body.light-theme .md-content th { background: #e5e7eb; }
-    body.light-theme .md-content blockquote { border-left-color: #9ca3af; color: #4b5563; }
-    body.light-theme .md-content hr { border-color: #d1d5db; }
-    body.light-theme .md-content a { color: #1d4ed8; }
-    body.light-theme .process-summary, body.light-theme .tool-meta, body.light-theme .tool-output { color: #4b5563; }
-    body.light-theme .tool-kind { color: #92400e; }
-    body.light-theme .tool-kind-bash { color: #92400e; }
-    body.light-theme .tool-kind-read { color: #1d4ed8; }
-    body.light-theme .tool-kind-write { color: #047857; }
-    body.light-theme .tool-kind-edit { color: #c2410c; }
-    body.light-theme .tool-kind-search { color: #6d28d9; }
-    body.light-theme .tool-kind-web { color: #0369a1; }
-    body.light-theme .tool-kind-agent { color: #4338ca; }
-    body.light-theme .tool-kind-default { color: #a16207; }
-    body.light-theme .tool-text { color: #111827; }
-    body.light-theme .tool-path { color: #374151; }
-    body.light-theme .tool-group-summary { color: #854d0e; }
-    body.light-theme {
-      --assistant-message-color: #111827;
-      --assistant-message-bg: rgba(255, 255, 255, 0.9);
-      --user-message-color: #166534;
-      --user-prefix-color: #16a34a;
-      --user-summary-color: #15803d;
-      --user-summary-hover-bg: #dcfce7;
-    }
-    body.light-theme .task-note { background: #f8fafc; border-color: #cbd5e1; }
-    body.light-theme .task-note-summary { color: #334155; }
-    body.light-theme .process-body { border-left-color: rgba(156, 163, 175, 0.6); }
-    body.light-theme .tool-details > summary::before { color: #6b7280; }
-    body.light-theme .border-gray-800, body.light-theme .border-gray-800\/50, body.light-theme .border-gray-800\/30 { border-color: #d1d5db !important; }
-    body.light-theme .bg-gray-950, body.light-theme .bg-gray-900, body.light-theme .bg-gray-900\/50, body.light-theme .bg-gray-900\/30, body.light-theme .bg-gray-800, body.light-theme .bg-gray-800\/50, body.light-theme .bg-gray-700 { background-color: #ffffff !important; }
-    body.light-theme .hover\:bg-gray-800:hover, body.light-theme .hover\:bg-gray-800\/50:hover, body.light-theme .hover\:bg-gray-700:hover, body.light-theme .hover\:bg-gray-600:hover { background-color: #f3f4f6 !important; }
-    body.light-theme .text-gray-100, body.light-theme .text-gray-300, body.light-theme .text-gray-200, body.light-theme .text-gray-400 { color: #111827 !important; }
-    body.light-theme .text-gray-500, body.light-theme .text-gray-600 { color: #4b5563 !important; }
-    body.light-theme .bg-blue-600 { background-color: #2563eb !important; }
-    body.light-theme .hover\:bg-blue-500:hover { background-color: #1d4ed8 !important; }
-    body.light-theme .bg-red-700 { background-color: #dc2626 !important; }
-    body.light-theme .hover\:bg-red-600:hover { background-color: #b91c1c !important; }
-    body.light-theme .bg-black\/60 { background-color: rgba(17, 24, 39, 0.35) !important; }
-  </style>
 </head>
 <body class="bg-gray-950 text-gray-100 h-screen overflow-hidden">
 
-<div x-data="app()" x-cloak class="flex h-screen">
+<div x-data="app()" x-cloak class="flex h-screen"
+     @session-switch.window="switchSession($event.detail)"
+     @session-new.window="newSession()"
+     @session-create.window="createSession($event.detail)"
+     @session-remove.window="removeManaged($event.detail)"
+     @session-add.window="addManaged($event.detail)"
+     @folder-add.window="addFolder($event.detail)"
+     @folder-remove.window="removeFolder($event.detail)"
+     @folder-rename.window="renameFolder($event.detail)"
+     @data-refresh.window="refreshData()">
 
   <!-- Sidebar -->
-  <div class="bg-gray-900 flex flex-col flex-shrink-0 overflow-hidden transition-[width] duration-200"
-       :style="`width: ${sidebarCollapsed ? 0 : sidebarWidth}px`"
-       :class="sidebarCollapsed ? '' : 'border-r border-gray-800'">
-    <div class="p-3 border-b border-gray-800 flex gap-2">
-      <button @click="newSession()" class="flex-1 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm">+ New</button>
-      <button @click="loadSessions()" class="flex-1 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-sm">Load</button>
-    </div>
-    <div class="flex-1 overflow-y-auto">
-      <!-- Panel mode: group by node then cwd -->
-      <template x-if="panelMode">
-        <div>
-          <template x-for="n in groupedByNode" :key="n.nodeId">
-            <div>
-              <div @click="toggleGroup('node:' + n.nodeId)"
-                   class="px-3 py-2 flex items-center gap-1.5 cursor-pointer hover:bg-gray-800/50 text-xs text-gray-300 sticky top-0 bg-gray-900 border-b border-gray-800/50 z-10">
-                <span x-text="expandedGroups.has('node:' + n.nodeId) ? '▾' : '▸'" class="text-gray-600 w-3"></span>
-                <span class="w-2 h-2 rounded-full flex-shrink-0" :class="isNodeOnline(n.nodeId) ? 'bg-green-400' : 'bg-gray-600'"></span>
-                <button @click.stop="renameNodePrompt(n)" class="truncate flex-1 font-semibold text-left hover:text-blue-300" x-text="n.label || n.nodeId"></button>
-                <button x-show="!n.approved" @click.stop="approveNode(n.nodeId)" title="Approve node"
-                        class="px-1 py-0.5 rounded text-[10px] text-green-300 hover:bg-green-900/30">✓</button>
-                <span x-show="!n.approved" class="text-[10px] text-yellow-400">pending</span>
-              </div>
-              <template x-if="expandedGroups.has('node:' + n.nodeId)">
-                <div>
-                  <template x-for="g in n.cwdGroups" :key="n.nodeId + ':' + g.cwd">
-                    <div>
-                      <div @click="toggleGroup(n.nodeId + ':' + g.cwd)"
-                           class="px-5 py-1.5 flex items-center gap-1.5 cursor-pointer hover:bg-gray-800/50 text-xs text-gray-400 sticky top-7 bg-gray-900 border-b border-gray-800/30">
-                        <span x-text="expandedGroups.has(n.nodeId + ':' + g.cwd) ? '▾' : '▸'" class="text-gray-600 w-3"></span>
-                        <span class="truncate flex-1 font-medium" x-text="g.cwd"></span>
-                        <a x-show="isVscodeActive(g.cwd, n.nodeId)"
-                          @click.stop
-                          :href="vscodeUrl(g.cwd, n.nodeId)" target="_blank" rel="noopener"
-                          title="Open VSCode"
-                          class="px-1.5 py-0.5 rounded hover:bg-gray-700 text-[11px] text-blue-300 no-underline">VS</a>
-                        <button x-show="!isVscodeActive(g.cwd, n.nodeId)"
-                          @click.stop="openVscode(g.cwd, n.nodeId)"
-                          title="Start VSCode"
-                          class="px-1.5 py-0.5 rounded hover:bg-gray-700 text-[11px] text-gray-500 hover:text-gray-300">VS</button>
-                        <button x-show="isVscodeActive(g.cwd, n.nodeId)"
-                                @click.stop="stopVscode(g.cwd, n.nodeId)"
-                                title="Stop VSCode"
-                                class="px-1 py-0.5 rounded text-[10px] text-red-300 hover:bg-red-900/30">Stop</button>
-                        <span class="text-gray-600" x-text="g.sessions.length"></span>
+  <div x-data="sidebar()" class="flex flex-shrink-0">
+    <div class="bg-gray-900 flex flex-col flex-shrink-0 overflow-hidden transition-[width] duration-200"
+         :style="`width: ${sidebarCollapsed ? 0 : sidebarWidth}px`"
+         :class="sidebarCollapsed ? '' : 'border-r border-gray-800'">
+      <div class="flex-1 overflow-y-auto">
+        <!-- Unified session list: works for both panel and standalone mode -->
+        <template x-for="n in groupedSessions" :key="n.nodeId">
+          <div>
+            <!-- Node header -->
+            <div @click="toggleGroup('node:' + n.nodeId)"
+                 class="px-3 py-1.5 flex items-center gap-1.5 cursor-pointer hover:bg-gray-800/50 text-xs text-gray-300 sticky top-0 bg-gray-900 border-b border-gray-800/50 z-10">
+              <span x-text="expandedGroups.has('node:' + n.nodeId) ? '▾' : '▸'" class="text-gray-600 w-3"></span>
+              <span class="w-2 h-2 rounded-full flex-shrink-0" :class="isNodeOnline(n.nodeId) ? 'bg-green-400' : 'bg-gray-600'"></span>
+              <span class="truncate flex-1 font-semibold" x-text="n.label || n.nodeId"></span>
+              <button @click.stop="openAddModal(n.nodeId)" title="Add session or folder"
+                      class="sidebar-btn">+</button>
+            </div>
+            <!-- CWD groups -->
+            <template x-if="expandedGroups.has('node:' + n.nodeId)">
+              <div>
+                <template x-for="g in n.cwdGroups" :key="n.nodeId + ':' + g.cwd">
+                  <div>
+                    <div class="pl-7 pr-3 py-1 flex items-center gap-1.5 hover:bg-gray-800/50 text-xs text-gray-400 sticky bg-gray-900 border-b border-gray-800/30" style="top:1.5rem">
+                      <span @click="toggleGroup(n.nodeId + ':' + g.cwd)" x-text="expandedGroups.has(n.nodeId + ':' + g.cwd) ? '▾' : '▸'" class="text-gray-600 w-3 cursor-pointer"></span>
+                      <span @click="g.sessions.length === 1 ? emit('session-switch', g.sessions[0].sessionId) : toggleGroup(n.nodeId + ':' + g.cwd)"
+                            class="truncate flex-1 font-medium cursor-pointer" :title="g.cwd"
+                            x-text="g.label ? '[' + g.label + ']' : g.cwd"></span>
+                      <span x-show="g.sessions.length > 1" class="text-gray-600 text-[10px]" x-text="'(' + g.sessions.length + ')'"></span>
+                      <div class="relative">
+                        <button @click.stop="folderMenu = folderMenu === (n.nodeId + ':' + g.cwd) ? null : (n.nodeId + ':' + g.cwd)"
+                                class="sidebar-btn">…</button>
+                        <div x-show="folderMenu === (n.nodeId + ':' + g.cwd)" @click.outside="folderMenu = null"
+                             class="absolute right-0 top-full mt-0.5 bg-gray-800 border border-gray-700 rounded shadow-lg py-1 z-30 min-w-[6rem]">
+                          <button @click.stop="emit('session-create', {cwd: g.cwd, nodeId: n.nodeId === '(local)' ? undefined : n.nodeId}); folderMenu = null"
+                                  class="w-full text-left px-3 py-1 text-xs text-gray-300 hover:bg-gray-700">Add Session</button>
+                          <button @click.stop="openRenamePopup(g.cwd, n.nodeId); folderMenu = null"
+                                  class="w-full text-left px-3 py-1 text-xs text-gray-300 hover:bg-gray-700">Rename</button>
+                          <button @click.stop="emit('folder-remove', {cwd: g.cwd, nodeId: n.nodeId === '(local)' ? undefined : n.nodeId}); folderMenu = null"
+                                  class="w-full text-left px-3 py-1 text-xs text-gray-300 hover:bg-gray-700">Remove</button>
+                        </div>
                       </div>
-                      <template x-if="expandedGroups.has(n.nodeId + ':' + g.cwd)">
-                        <div>
-                          <template x-for="s in g.sessions" :key="s.sessionId">
-                            <div @click="switchSession(s.sessionId)"
-                                 :class="currentId === s.sessionId ? 'bg-gray-800 border-l-2 border-blue-400' : 'border-l-2 border-transparent'"
-                                 class="pl-8 pr-3 py-2 cursor-pointer hover:bg-gray-800/50 relative group"
-                                 :style="isNodeOnline(n.nodeId) ? '' : 'opacity: 0.5'">
-                              <div class="flex items-center gap-2">
-                                <span x-show="activeSet.has(s.sessionId)" class="w-2 h-2 rounded-full bg-green-400 flex-shrink-0 animate-pulse"></span>
-                                <span x-show="!activeSet.has(s.sessionId)" class="w-2 h-2 rounded-full bg-gray-600 flex-shrink-0"></span>
-                                <span class="text-sm truncate" x-text="s.label || s.sessionId.slice(0, 8)"></span>
-                              </div>
-                              <button @click.stop="removeManaged(s.sessionId)"
-                                      class="absolute right-2 top-1.5 text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 text-xs">x</button>
-                            </div>
-                          </template>
+                    </div>
+                    <template x-if="expandedGroups.has(n.nodeId + ':' + g.cwd)">
+                      <div>
+                        <template x-for="s in g.sessions" :key="s.sessionId">
+                          <div @click="s._pending ? null : emit('session-switch', s.sessionId)"
+                               :class="s._pending ? 'border-l-2 border-yellow-400 bg-gray-800/50' : currentId === s.sessionId ? 'bg-gray-800 border-l-2 border-blue-400' : 'border-l-2 border-transparent'"
+                               class="pl-10 pr-3 py-1 cursor-pointer hover:bg-gray-800/50 group flex items-center gap-2"
+                               :style="!isNodeOnline(n.nodeId) ? 'opacity:0.5' : ''">
+                            <span class="w-2 h-2 rounded-full flex-shrink-0" :class="s._pending ? 'bg-yellow-400' : activeSet.has(s.sessionId) ? 'bg-green-400 animate-pulse' : 'bg-gray-600'"></span>
+                            <span class="text-sm truncate flex-1" :class="s._pending ? 'text-yellow-400 italic' : ''" x-text="s.label || s.sessionId.slice(0, 8)"></span>
+                            <button x-show="!s._pending" @click.stop="emit('session-remove', s.sessionId)"
+                                    class="sidebar-btn sidebar-btn-danger opacity-0 group-hover:opacity-100">x</button>
+                          </div>
+                        </template>
+                        <div x-show="g.sessions.length === 0" class="pl-10 pr-3 py-1 text-gray-600 text-xs">No sessions</div>
+                      </div>
+                    </template>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
+        </template>
+        <div x-show="managed.length === 0 && managedFolders.length === 0" class="p-4 text-gray-600 text-sm text-center">No sessions</div>
+      </div>
+    </div>
+    <!-- Resize handle -->
+    <div x-show="!sidebarCollapsed" @mousedown.prevent="startResize($event)" @touchstart.prevent="startResize($event)"
+         @keydown="handleResizeKeydown($event)" tabindex="0"
+         role="separator" aria-orientation="vertical" aria-label="Resize sidebar"
+         class="w-1 bg-gray-800 hover:bg-gray-700 active:bg-gray-700 cursor-col-resize flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"></div>
+
+    <!-- Add Modal (New / Browse) -->
+    <template x-if="addModal">
+      <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50" @click.self="addModal = null" @keydown.escape.window="addModal = null">
+        <div class="bg-gray-900 border border-gray-700 rounded-lg w-[560px] max-h-[70vh] flex flex-col overflow-hidden">
+          <!-- Tabs -->
+          <div class="flex items-center gap-1 px-3 py-2.5 border-b border-gray-800">
+            <button @click="addModal.tab = 'browse'"
+                    :class="addModal.tab === 'browse' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'"
+                    class="px-4 py-1.5 text-sm font-medium rounded">Load Existing</button>
+            <button @click="addModal.tab = 'add'"
+                    :class="addModal.tab === 'add' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'"
+                    class="px-4 py-1.5 text-sm font-medium rounded">New Session</button>
+            <span class="flex-1"></span>
+            <button @click="addModal = null" class="px-2 py-1 text-gray-600 hover:text-gray-300 text-xs rounded hover:bg-gray-800">x</button>
+          </div>
+          <!-- Tab: Add -->
+          <div x-show="addModal.tab === 'add'" class="p-4 space-y-3 text-sm">
+            <label class="text-xs text-gray-400 block">Folder</label>
+            <input x-model="newCwd" placeholder="/path/to/project"
+                   class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm mono outline-none focus:border-gray-500" />
+            <button @click="createNewSession()" :disabled="!newCwd.trim()"
+                    class="w-full px-3 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 rounded text-sm">Create</button>
+          </div>
+          <!-- Tab: Browse -->
+          <div x-show="addModal.tab === 'browse'" class="flex flex-col flex-1 min-h-0">
+            <div class="px-3 py-2 border-b border-gray-800">
+              <input x-model="browseFilter" @input.debounce.500ms="browseOffset = 0; fetchBrowseSessions()" placeholder="Filter by cwd..."
+                     class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1 text-xs mono outline-none" />
+            </div>
+            <div class="flex-1 overflow-y-auto">
+              <div x-show="browseLoading" class="p-4 text-gray-500 text-sm text-center">Loading...</div>
+              <template x-for="g in groupedBrowse" :key="g.cwd">
+                <div>
+                  <div class="px-4 py-2 flex items-center gap-1.5 text-xs text-gray-400 sticky top-0 bg-gray-900 border-b border-gray-800/50">
+                    <span @click="browseClickFolder(g)"
+                          class="cursor-pointer flex items-center gap-1.5 flex-1 min-w-0 hover:text-gray-200">
+                      <span x-text="browseExpanded.has(g.cwd) ? '▾' : '▸'" class="text-gray-600 w-3"></span>
+                      <span class="truncate font-medium" x-text="g.cwd"></span>
+                      <span class="text-gray-600 flex-shrink-0" x-text="g.sessions.length"></span>
+                    </span>
+                    <input type="checkbox" :checked="browseCheckedFolders.has(g.cwd) || isManagedFolder(g.cwd, addModal?.nodeId)"
+                           :disabled="isManagedFolder(g.cwd, addModal?.nodeId)"
+                           @click.stop="if (!isManagedFolder(g.cwd, addModal?.nodeId)) toggleBrowseFolder(g.cwd)"
+                           class="w-3.5 h-3.5 rounded border-gray-600 bg-gray-800 flex-shrink-0 cursor-pointer disabled:opacity-50 disabled:cursor-default" title="Add folder" />
+                  </div>
+                  <template x-if="browseExpanded.has(g.cwd)">
+                    <div>
+                      <template x-for="s in g.sessions" :key="s.sessionId">
+                        <div class="pl-7 pr-4 py-2 flex items-center gap-2 hover:bg-gray-800/50 border-b border-gray-800/30">
+                          <div class="flex-1 min-w-0 cursor-pointer" @click="if (!isSessionManaged(s.sessionId)) toggleBrowseSession(s.sessionId)">
+                            <div class="text-sm truncate" x-text="s.summary || s.sessionId.slice(0, 12)"></div>
+                            <div class="text-xs text-gray-500 mt-0.5" x-text="s.lastModified ? new Date(s.lastModified).toLocaleString() : ''"></div>
+                          </div>
+                          <input type="checkbox" :checked="browseCheckedSessions.has(s.sessionId) || isSessionManaged(s.sessionId)"
+                                 :disabled="isSessionManaged(s.sessionId)"
+                                 @click.stop="if (!isSessionManaged(s.sessionId)) toggleBrowseSession(s.sessionId)"
+                                 class="w-3.5 h-3.5 rounded border-gray-600 bg-gray-800 flex-shrink-0 cursor-pointer disabled:opacity-50 disabled:cursor-default" />
                         </div>
                       </template>
                     </div>
                   </template>
                 </div>
               </template>
+              <div x-show="!browseLoading && browseSessions.length === 0" class="p-4 text-gray-600 text-sm text-center">No sessions found</div>
+              <button x-show="browseHasMore" @click="browseOffset += browseLimit; fetchBrowseSessions(true)"
+                      class="w-full py-2 text-sm text-gray-500 hover:text-gray-300 hover:bg-gray-800">Load more...</button>
             </div>
-          </template>
-        </div>
-      </template>
-      <!-- Standalone mode: group by cwd only (original) -->
-      <template x-if="!panelMode">
-        <div>
-          <template x-for="g in groupedManaged" :key="g.cwd">
-            <div>
-              <div @click="toggleGroup(g.cwd)"
-                   class="px-3 py-2 flex items-center gap-1.5 cursor-pointer hover:bg-gray-800/50 text-xs text-gray-400 sticky top-0 bg-gray-900 border-b border-gray-800/50">
-                <span x-text="expandedGroups.has(g.cwd) ? '▾' : '▸'" class="text-gray-600 w-3"></span>
-                <span class="truncate flex-1 font-medium" x-text="g.cwd"></span>
-                <a x-show="isVscodeActive(g.cwd)"
-                  @click.stop
-                  :href="vscodeUrl(g.cwd)" target="_blank" rel="noopener"
-                  title="Open VSCode"
-                  class="px-1.5 py-0.5 rounded hover:bg-gray-700 text-[11px] text-blue-300 no-underline">VS</a>
-                <button x-show="!isVscodeActive(g.cwd)"
-                  @click.stop="openVscode(g.cwd)"
-                  title="Start VSCode"
-                  class="px-1.5 py-0.5 rounded hover:bg-gray-700 text-[11px] text-gray-500 hover:text-gray-300">VS</button>
-                <button x-show="isVscodeActive(g.cwd)"
-                        @click.stop="stopVscode(g.cwd)"
-                        aria-label="Stop VSCode server"
-                        title="Stop VSCode"
-                        class="px-1 py-0.5 rounded text-[10px] text-red-300 hover:bg-red-900/30">Stop</button>
-                <span class="text-gray-600" x-text="g.sessions.length"></span>
-              </div>
-              <template x-if="expandedGroups.has(g.cwd)">
-                <div>
-                  <template x-for="s in g.sessions" :key="s.sessionId">
-                    <div @click="switchSession(s.sessionId)"
-                         :class="currentId === s.sessionId ? 'bg-gray-800 border-l-2 border-blue-400' : 'border-l-2 border-transparent'"
-                         class="pl-5 pr-3 py-2 cursor-pointer hover:bg-gray-800/50 relative group">
-                      <div class="flex items-center gap-2">
-                        <span x-show="activeSet.has(s.sessionId)" class="w-2 h-2 rounded-full bg-green-400 flex-shrink-0" :class="activeSet.has(s.sessionId) && 'animate-pulse'"></span>
-                        <span x-show="!activeSet.has(s.sessionId)" class="w-2 h-2 rounded-full bg-gray-600 flex-shrink-0"></span>
-                        <span class="text-sm truncate" x-text="s.label || s.sessionId.slice(0, 8)"></span>
-                      </div>
-                      <button @click.stop="removeManaged(s.sessionId)"
-                              class="absolute right-2 top-1.5 text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 text-xs">x</button>
-                    </div>
-                  </template>
-                </div>
-              </template>
+            <div x-show="hasChecked" class="p-3 border-t border-gray-800">
+              <button @click="addSelected()" class="w-full px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm">
+                Add selected
+                (<span x-text="browseCheckedFolders.size + browseCheckedSessions.size"></span>)
+              </button>
             </div>
-          </template>
+          </div>
         </div>
-      </template>
-      <div x-show="managed.length === 0" class="p-4 text-gray-600 text-sm text-center">No sessions</div>
-    </div>
-  </div>
-  <div x-show="!sidebarCollapsed" @mousedown.prevent="startResize($event)" @touchstart.prevent="startResize($event)"
-       @keydown="handleResizeKeydown($event)"
-       tabindex="0"
-       role="separator" aria-orientation="vertical" aria-label="Resize sidebar"
-       class="w-1 bg-gray-800 hover:bg-gray-700 active:bg-gray-700 cursor-col-resize flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"></div>
+      </div>
+    </template>
+
+    <!-- Rename popup -->
+    <template x-if="renamePopup">
+      <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50" @click.self="renamePopup = null" @keydown.escape.window="renamePopup = null">
+        <div class="bg-gray-900 border border-gray-700 rounded-lg w-80 p-4 space-y-3">
+          <div class="text-xs text-gray-400 truncate" x-text="renamePopup.cwd"></div>
+          <input id="rename-input" x-model="renamePopup.label" @keydown.enter.prevent="submitRename()" placeholder="Display name (empty to reset)"
+                 class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm mono outline-none focus:border-gray-500" />
+          <div class="flex gap-2">
+            <button @click="renamePopup = null" class="flex-1 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-sm">Cancel</button>
+            <button @click="submitRename()" class="flex-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-sm">Save</button>
+          </div>
+        </div>
+      </div>
+    </template>
+  </div><!-- /sidebar -->
 
   <!-- Main -->
   <div class="flex-1 flex flex-col min-w-0">
-
-    <!-- Header bar -->
+    <!-- Header -->
     <div class="px-4 py-2 border-b border-gray-800 flex items-center gap-3 text-sm bg-gray-900/50 flex-shrink-0">
-      <button @click="toggleSidebar()"
-              class="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-xs flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
-              :aria-label="sidebarToggleLabel()"
-              :aria-expanded="String(!sidebarCollapsed)"
-              :title="sidebarToggleLabel()"
+      <button @click="toggleSidebar()" class="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-xs flex-shrink-0"
+              :title="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
               x-text="sidebarCollapsed ? '☰' : '◧'"></button>
       <template x-if="panelMode">
-        <div class="flex items-center gap-2">
-          <select x-model="selectedNodeId" class="bg-gray-800 text-gray-300 rounded px-2 py-1 text-xs outline-none">
-            <template x-for="n in nodes" :key="n.nodeId">
-              <option :value="n.nodeId" :disabled="!n.online || !n.approved" x-text="(n.online ? '● ' : '○ ') + (n.label || n.nodeId) + (n.approved ? '' : ' (pending)')"></option>
-            </template>
-          </select>
-          <input x-model="panelAdminSecret" type="password" placeholder="admin secret"
-                 class="bg-gray-800 text-gray-300 rounded px-2 py-1 text-xs outline-none w-28" />
-        </div>
+        <select x-model="selectedNodeId" class="bg-gray-800 text-gray-300 rounded px-2 py-1 text-xs outline-none">
+          <template x-for="n in nodes" :key="n.nodeId">
+            <option :value="n.nodeId" :disabled="!n.online" x-text="(n.online ? '● ' : '○ ') + (n.label || n.nodeId)"></option>
+          </template>
+        </select>
       </template>
-      <button @click="toggleTheme()"
-              class="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-xs flex-shrink-0"
-              :title="theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'"
-              x-text="theme === 'light' ? '☀' : '☾'"></button>
+      <button @click="toggleTheme()" class="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-xs flex-shrink-0"
+              :title="theme === 'light' ? 'Switch to dark' : 'Switch to light'" x-text="theme === 'light' ? '☀' : '☾'"></button>
       <span class="text-gray-500">cwd:</span>
       <input x-model="cwd" class="bg-transparent text-gray-300 flex-1 outline-none text-sm mono min-w-0" />
       <select x-model="model" class="bg-gray-800 text-gray-300 rounded px-2 py-1 text-xs outline-none">
-        <option value="claude-sonnet-4-6">Sonnet 4.6</option>
-        <option value="claude-opus-4-6">Opus 4.6</option>
-        <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
+        <option value="claude-sonnet-4.6-rt">Sonnet 4.6</option>
+        <option value="claude-opus-4.6-rt">Opus 4.6</option>
+        <option value="claude-haiku-4.5-rt">Haiku 4.5</option>
       </select>
       <button x-show="currentId && activeSet.has(currentId)" @click="changeModel()"
               class="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded">Apply Model</button>
     </div>
 
-    <!-- Messages area (Alpine component) -->
-    <div x-data="messages"
-         class="flex-1 overflow-y-auto overflow-x-hidden p-4 mono text-sm space-y-1">
+    <!-- Messages -->
+    <div x-data="messages" class="flex-1 overflow-y-auto overflow-x-hidden p-4 mono text-sm space-y-1">
       <div x-ref="rendered"></div>
-
-      <!-- Streaming blocks (finalized parts of current response) -->
       <template x-for="(block, i) in streaming.blocks" :key="'sb'+i">
         <div>
           <template x-if="block.type === 'text'">
@@ -310,42 +254,32 @@
           </template>
         </div>
       </template>
-
-      <!-- Active tool being streamed -->
       <div x-show="streaming._toolName" class="text-xs py-0.5">
         <span class="tool-kind font-semibold" x-text="streaming._toolName"></span>
         <span class="tool-meta animate-pulse">...</span>
       </div>
-
-      <!-- Streaming text (live typing) -->
       <div x-show="streaming.text" class="message-row message-assistant py-1">
         <div class="message-content assistant-message md-content"><span x-html="R.renderMd(streaming.text)"></span><span class="cursor-blink tool-meta">|</span></div>
       </div>
-
-      <!-- Thinking indicator -->
-      <div x-show="$store.active && !streaming.text && streaming.blocks.length === 0 && !streaming._toolName"
-           class="text-gray-600 text-xs py-1">
+      <div x-show="$store.active && !streaming.text && streaming.blocks.length === 0 && !streaming._toolName" class="text-gray-600 text-xs py-1">
         <span class="animate-pulse">thinking...</span>
       </div>
     </div>
 
-    <!-- Input area -->
+    <!-- Input -->
     <div class="p-3 border-t border-gray-800 bg-gray-900/30 flex-shrink-0">
       <div class="flex gap-2">
-        <input x-model="inputText"
-               @keydown.enter.prevent="send()"
+        <input x-model="inputText" @keydown.enter.prevent="send()"
                :placeholder="currentId ? 'Send a message...' : 'Start a new session...'"
                class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm mono outline-none focus:border-gray-500 min-w-0" />
-        <button @click="send()"
-                :disabled="!inputText.trim()"
+        <button @click="send()" :disabled="!inputText.trim()"
                 class="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 rounded text-sm">Send</button>
-        <button x-show="currentId && activeSet.has(currentId)"
-                @click="interruptSession()"
+        <button x-show="currentId && activeSet.has(currentId)" @click="interruptSession()"
                 class="px-3 py-2 bg-red-700 hover:bg-red-600 rounded text-sm">Stop</button>
       </div>
     </div>
 
-    <!-- Status bar -->
+    <!-- Status -->
     <div class="px-4 py-1 border-t border-gray-800 text-xs text-gray-600 flex gap-4 flex-shrink-0">
       <span x-text="'cost: $' + totalCost.toFixed(4)"></span>
       <span x-text="'in: ' + totalIn + ' out: ' + totalOut"></span>
@@ -354,790 +288,7 @@
     </div>
   </div>
 
-  <!-- Load Sessions Modal -->
-  <div x-show="showLoadModal" x-cloak
-       class="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
-       @click.self="showLoadModal = false">
-    <div class="bg-gray-900 border border-gray-700 rounded-lg w-[600px] max-h-[70vh] flex flex-col">
-      <div class="p-4 border-b border-gray-800 flex justify-between items-center">
-        <h3 class="text-sm font-semibold">Load Existing Session</h3>
-        <button @click="showLoadModal = false" class="text-gray-500 hover:text-gray-300">x</button>
-      </div>
-      <div class="p-3 border-b border-gray-800">
-        <input x-model="browseCwd" @input.debounce.500ms="fetchBrowseSessions()"
-               placeholder="Filter by cwd..."
-               class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm mono outline-none" />
-      </div>
-      <div class="flex-1 overflow-y-auto">
-        <div x-show="browseLoading" class="p-4 text-gray-500 text-sm text-center">Loading...</div>
-        <template x-for="g in groupedBrowse" :key="g.cwd">
-          <div>
-            <div @click="browseExpanded.has(g.cwd) ? browseExpanded.delete(g.cwd) : browseExpanded.add(g.cwd); browseExpanded = new Set(browseExpanded)"
-                 class="px-4 py-2 flex items-center gap-1.5 cursor-pointer hover:bg-gray-800/50 text-xs text-gray-400 sticky top-0 bg-gray-900 border-b border-gray-800/50">
-              <span x-text="browseExpanded.has(g.cwd) ? '▾' : '▸'" class="text-gray-600 w-3"></span>
-              <span class="truncate flex-1 font-medium" x-text="g.cwd"></span>
-              <span class="text-gray-600" x-text="g.sessions.length"></span>
-            </div>
-            <template x-if="browseExpanded.has(g.cwd)">
-              <div>
-                <template x-for="s in g.sessions" :key="s.sessionId">
-                  <div @click="addToManaged(s)"
-                       class="pl-7 pr-4 py-2 hover:bg-gray-800 cursor-pointer border-b border-gray-800/50">
-                    <div class="text-sm truncate" x-text="s.summary || s.sessionId.slice(0, 12)"></div>
-                    <div class="text-xs text-gray-500 mt-0.5" x-text="s.lastModified ? new Date(s.lastModified).toLocaleString() : ''"></div>
-                  </div>
-                </template>
-              </div>
-            </template>
-          </div>
-        </template>
-        <div x-show="!browseLoading && browseSessions.length === 0" class="p-4 text-gray-600 text-sm text-center">
-          No sessions found
-        </div>
-        <button x-show="browseHasMore"
-                @click="browseOffset += browseLimit; fetchBrowseSessions(true)"
-                class="w-full py-2 text-sm text-gray-500 hover:text-gray-300 hover:bg-gray-800">Load more...</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- VSCode Modal -->
-  <div x-show="showVscodeModal" x-cloak
-       class="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
-       @click.self="showVscodeModal = false">
-    <div class="bg-gray-900 border border-gray-700 rounded-lg w-[560px] max-h-[70vh] flex flex-col">
-      <div class="p-4 border-b border-gray-800 flex justify-between items-center">
-        <h3 class="text-sm font-semibold">Start VSCode Server</h3>
-        <button @click="showVscodeModal = false" class="text-gray-500 hover:text-gray-300">x</button>
-      </div>
-      <div class="px-4 pt-3 border-b border-gray-800 flex gap-2 text-xs">
-        <button @click="vscodeTab = 'start'"
-                :class="vscodeTab === 'start' ? 'bg-gray-700 text-gray-100' : 'bg-gray-800 text-gray-400 hover:text-gray-200'"
-                class="px-3 py-1.5 rounded-t">启动</button>
-        <button @click="vscodeTab = 'install'"
-                :class="vscodeTab === 'install' ? 'bg-gray-700 text-gray-100' : 'bg-gray-800 text-gray-400 hover:text-gray-200'"
-                class="px-3 py-1.5 rounded-t">安装</button>
-      </div>
-      <div class="p-4 space-y-3 text-sm overflow-y-auto">
-        <div class="text-gray-400">cwd: <span class="mono text-gray-200" x-text="vscodeTargetCwd"></span></div>
-        <div x-show="vscodeLoading" class="text-gray-500">Loading...</div>
-        <div x-show="vscodeTab === 'start'" class="space-y-3">
-          <label class="text-xs text-gray-400 block">Version</label>
-          <select x-model="vscodeSelectedCommit" aria-label="Select VSCode server version"
-                  :disabled="vscodeVersions.length === 0"
-                  class="w-full bg-gray-800 text-gray-300 rounded px-2 py-2 text-sm outline-none disabled:opacity-60">
-            <template x-for="v in vscodeVersions" :key="v.commit">
-              <option :value="v.commit" x-text="`${v.version} (${v.commit.slice(0, 12)})`"></option>
-            </template>
-          </select>
-          <div x-show="vscodeVersions.length === 0" class="text-yellow-400 text-xs">请先在「安装」页安装</div>
-          <button @click="startVscode()"
-                  :disabled="!vscodeSelectedCommit || vscodeVersions.length === 0 || vscodeLoading"
-                  aria-label="Start VSCode server"
-                  x-show="!vscodeStartedUrl"
-                  class="w-full px-3 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 rounded text-sm">Start</button>
-          <a x-show="vscodeStartedUrl" :href="vscodeStartedUrl" target="_blank" rel="noopener"
-             @click="showVscodeModal = false"
-             class="block w-full px-3 py-2 bg-green-600 hover:bg-green-500 rounded text-sm text-center no-underline text-white">Open VSCode</a>
-        </div>
-        <div x-show="vscodeTab === 'install'" class="space-y-3">
-          <label class="text-xs text-gray-400 block">VS Code version</label>
-          <input x-model="vscodeInstallVersion" @input.debounce.400ms="fetchInstallInfo()"
-                 placeholder="1.112.0"
-                 class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm mono outline-none" />
-          <label class="text-xs text-gray-400 block">Prompt (copy to Agent Link session)</label>
-          <textarea readonly class="w-full h-24 bg-gray-800 border border-gray-700 rounded p-2 text-xs mono text-gray-300" x-text="vscodeInstall?.prompt || ''"></textarea>
-          <label class="text-xs text-gray-400 block">Install script</label>
-          <textarea readonly class="w-full h-40 bg-gray-800 border border-gray-700 rounded p-2 text-xs mono text-gray-300" x-text="vscodeInstall?.script || ''"></textarea>
-          <label class="text-xs text-gray-400 block">Install command</label>
-          <textarea readonly aria-label="Installation command" class="w-full h-20 bg-gray-800 border border-gray-700 rounded p-2 text-xs mono text-gray-300" x-text="vscodeInstall?.command || ''"></textarea>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Rename node modal -->
-  <template x-if="renameModal">
-    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @click.self="renameModal = null" @keydown.escape.window="renameModal = null">
-      <div class="bg-gray-800 rounded-lg shadow-xl p-4 w-72">
-        <div class="text-sm text-gray-300 mb-2">Rename node</div>
-        <input x-ref="renameInput" x-model="renameModal.label" @keydown.enter="renameNodeSubmit()" @keydown.escape="renameModal = null"
-               class="w-full bg-gray-900 text-gray-100 rounded px-3 py-1.5 text-sm outline-none border border-gray-600 focus:border-blue-500" />
-        <div class="flex justify-end gap-2 mt-3">
-          <button @click="renameModal = null" class="px-3 py-1 rounded text-xs text-gray-400 hover:bg-gray-700">Cancel</button>
-          <button @click="renameNodeSubmit()" class="px-3 py-1 rounded text-xs bg-blue-600 hover:bg-blue-500 text-white">Save</button>
-        </div>
-      </div>
-    </div>
-  </template>
 </div>
-
-<script>
-function app() {
-  return {
-    managed: [],
-    currentId: null,
-    inputText: '',
-    cwd: localStorage.getItem('agent-link:cwd') || '',
-    model: localStorage.getItem('agent-link:model') || 'claude-sonnet-4-6',
-    activeSet: new Set(),
-    eventSource: null,
-    seenUuids: new Set(),
-    totalCost: 0,
-    totalIn: 0,
-    totalOut: 0,
-    expandedGroups: new Set(),
-    sidebarWidth: (() => {
-      const storedWidth = Number(localStorage.getItem('agent-link:sidebar-width'));
-      return Math.min(480, Math.max(180, Number.isFinite(storedWidth) ? storedWidth : 256));
-    })(),
-    sidebarCollapsed: (() => {
-      const storedCollapsed = localStorage.getItem('agent-link:sidebar-collapsed');
-      return storedCollapsed !== null ? storedCollapsed === 'true' : !window.matchMedia('(min-width: 768px)').matches;
-    })(),
-    theme: localStorage.getItem('agent-link:theme') === 'light' ? 'light' : 'dark',
-
-    showLoadModal: false,
-    browseSessions: [],
-    browseLoading: false,
-    browseCwd: '',
-    browseLimit: 30,
-    browseOffset: 0,
-    browseExpanded: new Set(),
-    browseHasMore: false,
-    vscodeVersions: [],
-    vscodeActive: {},
-    showVscodeModal: false,
-    vscodeTargetCwd: '',
-    vscodeTargetNodeId: '',
-    vscodeTab: 'start',
-    vscodeSelectedCommit: '',
-    vscodeInstallVersion: '1.112.0',
-    vscodeInstall: null,
-    vscodeLoading: false,
-    vscodeStartedUrl: '',
-
-    // Panel mode
-    panelMode: false,
-    nodes: [],
-    selectedNodeId: localStorage.getItem('agent-link:nodeId') || '',
-    panelAdminSecret: '',
-    renameModal: null, // { nodeId, label }
-
-    init() {
-      Alpine.store('active', false);
-      if (!this.cwd) this.cwd = window.location.hostname === 'localhost' ? '.' : '/';
-      this.applyTheme();
-      this.detectPanelMode().then(() => this.loadManaged());
-      this.refreshActive();
-      this.refreshVscodeActive();
-      setInterval(() => { this.refreshActive(); this.refreshVscodeActive(); if (this.panelMode) this.refreshNodes(); }, 5000);
-      this.$watch('cwd', (v) => localStorage.setItem('agent-link:cwd', v));
-      this.$watch('model', (v) => localStorage.setItem('agent-link:model', v));
-      this.$watch('sidebarCollapsed', (v) => localStorage.setItem('agent-link:sidebar-collapsed', String(v)));
-      this.$watch('sidebarWidth', (v) => localStorage.setItem('agent-link:sidebar-width', String(this.clampWidth(v))));
-      this.$watch('selectedNodeId', (v) => localStorage.setItem('agent-link:nodeId', v));
-      this.$watch('theme', (v) => {
-        localStorage.setItem('agent-link:theme', v);
-        this.applyTheme();
-      });
-    },
-
-    applyTheme() {
-      if (this.theme === 'light') document.body.classList.add('light-theme');
-      else document.body.classList.remove('light-theme');
-    },
-
-    toggleTheme() {
-      this.theme = this.theme === 'light' ? 'dark' : 'light';
-    },
-
-    async detectPanelMode() {
-      try {
-        const res = await fetch('/api/nodes');
-        if (res.ok) {
-          this.panelMode = true;
-          this.nodes = await res.json();
-          if (!this.selectedNodeId && this.nodes.length > 0) {
-            this.selectedNodeId = (this.nodes.find(n => n.online) || this.nodes[0]).nodeId;
-          }
-        }
-      } catch {
-        this.panelMode = false;
-      }
-    },
-
-    async loadManaged() {
-      try {
-        const res = await fetch('/api/managed');
-        if (res.ok) {
-          const list = await res.json();
-          this.managed = (list || []).map(item => ({
-            sessionId: item.id,
-            cwd: item.cwd,
-            model: item.model || '',
-            label: item.label || item.id?.slice(0, 12) || '',
-            nodeId: item.nodeId,
-            createdAt: item.createdAt,
-          }));
-          return;
-        }
-      } catch {}
-      this.managed = JSON.parse(localStorage.getItem('agent-link:managed') || '[]');
-      for (const s of this.managed) {
-        await this.saveManagedItem(s);
-      }
-      localStorage.removeItem('agent-link:managed');
-    },
-
-    async refreshNodes() {
-      try {
-        const res = await fetch('/api/nodes');
-        if (res.ok) this.nodes = await res.json();
-      } catch {}
-    },
-
-    async approveNode(nodeId) {
-      if (!this.panelAdminSecret) return alert('Set admin secret in header first');
-      try {
-        await fetch(`/api/nodes/${encodeURIComponent(nodeId)}/approve`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${this.panelAdminSecret}` },
-        });
-      } catch {}
-      this.refreshNodes();
-    },
-
-    async renameNodePrompt(node) {
-      this.renameModal = { nodeId: node.nodeId, label: node.label || node.nodeId };
-      await this.$nextTick();
-      this.$refs.renameInput?.focus();
-      this.$refs.renameInput?.select();
-    },
-
-    async renameNodeSubmit() {
-      const m = this.renameModal;
-      if (!m) return;
-      const label = m.label.trim();
-      if (!label) { this.renameModal = null; return; }
-      if (!this.panelAdminSecret) { this.renameModal = null; return alert('Set admin secret in header first'); }
-      try {
-        await fetch(`/api/nodes/${encodeURIComponent(m.nodeId)}/label`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.panelAdminSecret}`,
-          },
-          body: JSON.stringify({ label }),
-        });
-      } catch {}
-      this.renameModal = null;
-      this.refreshNodes();
-    },
-
-    isNodeOnline(nodeId) {
-      const n = this.nodes.find(n => n.nodeId === nodeId);
-      return n?.online ?? false;
-    },
-
-    get groupedByNode() {
-      // Group managed sessions by nodeId, then by cwd
-      const nodeMap = new Map();
-      // Initialize from known nodes
-      for (const n of this.nodes) {
-        nodeMap.set(n.nodeId, { nodeId: n.nodeId, label: n.label, approved: n.approved, cwdGroups: [] });
-      }
-      // Group sessions
-      const cwdMap = new Map(); // nodeId:cwd → sessions
-      for (const s of this.managed) {
-        const nid = s.nodeId || '(local)';
-        const key = nid + ':' + (s.cwd || '(unknown)');
-        if (!cwdMap.has(key)) cwdMap.set(key, { nodeId: nid, cwd: s.cwd || '(unknown)', sessions: [] });
-        cwdMap.get(key).sessions.push(s);
-      }
-      // Assign cwd groups to nodes
-      for (const [, group] of cwdMap) {
-        if (!nodeMap.has(group.nodeId)) {
-          nodeMap.set(group.nodeId, { nodeId: group.nodeId, label: group.nodeId, approved: true, cwdGroups: [] });
-        }
-        nodeMap.get(group.nodeId).cwdGroups.push(group);
-      }
-      return [...nodeMap.values()];
-    },
-
-    clampWidth(width) {
-      return Math.min(480, Math.max(180, Number.isFinite(width) ? width : 256));
-    },
-
-    toggleSidebar() {
-      this.sidebarCollapsed = !this.sidebarCollapsed;
-    },
-
-    sidebarToggleLabel() {
-      return this.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar';
-    },
-
-    resizeSidebarBy(delta) {
-      if (this.sidebarCollapsed) return;
-      this.sidebarWidth = this.clampWidth(this.sidebarWidth + delta);
-    },
-
-    handleResizeKeydown(event) {
-      if (event.key === 'ArrowLeft') { event.preventDefault(); this.resizeSidebarBy(-12); }
-      else if (event.key === 'ArrowRight') { event.preventDefault(); this.resizeSidebarBy(12); }
-      else if (event.key === 'Home') { event.preventDefault(); this.resizeSidebarBy(180 - this.sidebarWidth); }
-      else if (event.key === 'End') { event.preventDefault(); this.resizeSidebarBy(480 - this.sidebarWidth); }
-    },
-
-    startResize(event) {
-      if (this.sidebarCollapsed) return;
-      const startX = event.touches?.[0]?.clientX ?? event.clientX;
-      const startWidth = this.sidebarWidth;
-      let frame = null;
-      let nextWidth = this.sidebarWidth;
-      const previousUserSelect = document.body.style.userSelect;
-      document.body.style.userSelect = 'none';
-      const onMove = (e) => {
-        if (e.type === 'touchmove' && e.cancelable) e.preventDefault();
-        const clientX = e.touches?.[0]?.clientX ?? e.clientX;
-        if (typeof clientX !== 'number') return;
-        nextWidth = this.clampWidth(startWidth + (clientX - startX));
-        if (frame) return;
-        frame = requestAnimationFrame(() => {
-          this.sidebarWidth = nextWidth;
-          frame = null;
-        });
-      };
-      const onUp = () => {
-        if (frame) cancelAnimationFrame(frame);
-        this.sidebarWidth = nextWidth;
-        document.body.style.userSelect = previousUserSelect;
-        window.removeEventListener('mousemove', onMove);
-        window.removeEventListener('mouseup', onUp);
-        window.removeEventListener('touchmove', onMove);
-        window.removeEventListener('touchend', onUp);
-      };
-      window.addEventListener('mousemove', onMove);
-      window.addEventListener('mouseup', onUp);
-      window.addEventListener('touchmove', onMove, { passive: false });
-      window.addEventListener('touchend', onUp);
-    },
-
-    // Dispatch event to messages component
-    syncActive() {
-      Alpine.store('active', !!(this.currentId && this.activeSet.has(this.currentId)));
-    },
-
-    msg(type, detail) {
-      window.dispatchEvent(new CustomEvent('msg:' + type, { detail }));
-    },
-
-    async refreshActive() {
-      try {
-        const res = await fetch('/api/active');
-        this.activeSet = new Set(await res.json());
-        this.syncActive();
-      } catch {}
-    },
-
-    isVscodeActive(cwd, nodeId) {
-      if (this.panelMode && nodeId) {
-        return !!this.vscodeActive[nodeId + ':' + cwd];
-      }
-      return !!this.vscodeActive[cwd];
-    },
-
-    vscodeUrl(cwd, nodeId) {
-      const key = (this.panelMode && nodeId) ? (nodeId + ':' + cwd) : cwd;
-      const item = this.vscodeActive[key];
-      if (!item?.id) return '#';
-      if (this.panelMode && item.nodeId) {
-        return `/vscode/${item.nodeId}/${item.id}/`;
-      }
-      return `/vscode/${item.id}/`;
-    },
-
-    async refreshVscodeActive() {
-      try {
-        const res = await fetch('/api/vscode/active');
-        const list = await res.json();
-        const map = {};
-        for (const item of list || []) {
-          if (item.nodeId) {
-            map[item.nodeId + ':' + item.cwd] = item;
-          } else {
-            map[item.cwd] = item;
-          }
-        }
-        this.vscodeActive = map;
-      } catch {}
-    },
-
-    async openVscode(cwd, nodeId) {
-      this.vscodeTargetCwd = cwd;
-      this.vscodeTargetNodeId = nodeId || '';
-      this.vscodeTab = 'start';
-      this.vscodeSelectedCommit = '';
-      this.vscodeStartedUrl = '';
-      this.vscodeLoading = true;
-      this.showVscodeModal = true;
-      try {
-        const params = nodeId ? `?nodeId=${encodeURIComponent(nodeId)}` : '';
-        const response = await fetch('/api/vscode/versions' + params);
-        this.vscodeVersions = await response.json();
-        this.vscodeTab = this.vscodeVersions.length === 0 ? 'install' : 'start';
-        await this.fetchInstallInfo();
-        if (this.vscodeVersions.length > 0) {
-          this.vscodeSelectedCommit = this.vscodeVersions[0].commit;
-        }
-      } catch {
-        this.vscodeVersions = [];
-      }
-      this.vscodeLoading = false;
-    },
-
-    async fetchInstallInfo() {
-      try {
-        const version = this.vscodeInstallVersion || '1.112.0';
-        const params = new URLSearchParams({ version });
-        if (this.vscodeTargetNodeId) params.set('nodeId', this.vscodeTargetNodeId);
-        const res = await fetch(`/api/vscode/install-command?${params}`);
-        this.vscodeInstall = await res.json();
-      } catch {
-        this.vscodeInstall = null;
-      }
-    },
-
-    async startVscode() {
-      if (!this.vscodeTargetCwd || !this.vscodeSelectedCommit) return;
-      this.vscodeLoading = true;
-      try {
-        const body = { cwd: this.vscodeTargetCwd, commit: this.vscodeSelectedCommit };
-        if (this.vscodeTargetNodeId) body.nodeId = this.vscodeTargetNodeId;
-        const res = await fetch('/api/vscode/start', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        const data = await res.json();
-        if (data.error) throw new Error(data.error);
-        await this.refreshVscodeActive();
-        this.vscodeStartedUrl = this.vscodeUrl(this.vscodeTargetCwd, this.vscodeTargetNodeId);
-      } catch (err) {
-        alert(err?.message || 'Failed to start VSCode server');
-      }
-      this.vscodeLoading = false;
-    },
-
-    async stopVscode(cwd, nodeId) {
-      const key = nodeId ? nodeId + ':' + cwd : cwd;
-      if (!this.vscodeActive[key]) return;
-      if (!confirm(`Stop VSCode server for ${cwd}?`)) return;
-      try {
-        const body = { cwd };
-        if (nodeId) body.nodeId = nodeId;
-        await fetch('/api/vscode/stop', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-      } catch {}
-      this.refreshVscodeActive();
-    },
-
-    async saveManagedItem(item) {
-      const body = {
-        id: item.sessionId,
-        cwd: item.cwd || '',
-        nodeId: item.nodeId,
-        createdAt: item.createdAt || Date.now(),
-      };
-      try {
-        await fetch('/api/managed', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-      } catch {}
-    },
-
-    get groupedManaged() {
-      const map = new Map();
-      for (const s of this.managed) {
-        const key = s.cwd || '(unknown)';
-        if (!map.has(key)) map.set(key, []);
-        map.get(key).push(s);
-      }
-      return Array.from(map, ([cwd, sessions]) => ({ cwd, sessions }));
-    },
-
-    get groupedBrowse() {
-      const map = new Map();
-      for (const s of this.browseSessions) {
-        const key = s.cwd || '(unknown)';
-        if (!map.has(key)) map.set(key, []);
-        map.get(key).push(s);
-      }
-      return Array.from(map, ([cwd, sessions]) => ({ cwd, sessions }));
-    },
-
-    toggleGroup(cwd) {
-      this.expandedGroups.has(cwd) ? this.expandedGroups.delete(cwd) : this.expandedGroups.add(cwd);
-      this.expandedGroups = new Set(this.expandedGroups);
-    },
-
-    expandGroup(cwd) {
-      this.expandedGroups.add(cwd || '(unknown)');
-      this.expandedGroups = new Set(this.expandedGroups);
-    },
-
-    newSession() {
-      this.currentId = null;
-      this.msg('clear');
-      this.seenUuids = new Set();
-      this.totalCost = 0;
-      this.totalIn = 0;
-      this.totalOut = 0;
-      if (this.eventSource) { this.eventSource.close(); this.eventSource = null; }
-      this.$nextTick(() => this.$el.querySelector('input[x-model="inputText"]')?.focus());
-    },
-
-    async send() {
-      if (!this.inputText.trim()) return;
-
-      if (!this.currentId) {
-        const prompt = this.inputText.trim();
-        this.inputText = '';
-        this.msg('append', { type: 'user', message: { content: [{ type: 'text', text: prompt }] } });
-
-        const nodeId = this.panelMode ? this.selectedNodeId : undefined;
-        try {
-          const body = { prompt, cwd: this.cwd, model: this.model };
-          if (nodeId) body.nodeId = nodeId;
-          const res = await fetch('/api/query', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-          });
-          const data = await res.json();
-          if (data.error) { this.msg('append', { type: 'error', error: data.error }); return; }
-
-          this.currentId = data.sessionId;
-          const entry = { sessionId: data.sessionId, cwd: this.cwd, model: this.model, label: prompt.slice(0, 40) };
-          if (nodeId) entry.nodeId = nodeId;
-          this.managed.unshift(entry);
-          this.saveManagedItem(entry);
-          if (this.panelMode && nodeId) {
-            this.expandGroup('node:' + nodeId);
-            this.expandGroup(nodeId + ':' + this.cwd);
-          } else {
-            this.expandGroup(this.cwd);
-          }
-          this.activeSet.add(data.sessionId);
-          this.syncActive();
-          this.connectSSE(data.sessionId);
-        } catch (err) {
-          this.msg('append', { type: 'error', error: err.message });
-        }
-        return;
-      }
-
-      const prompt = this.inputText.trim();
-      this.inputText = '';
-      this.msg('append', { type: 'user', message: { content: [{ type: 'text', text: prompt }] } });
-
-      const s = this.managed.find(s => s.sessionId === this.currentId);
-      try {
-        const body = { prompt, sessionId: this.currentId, cwd: s?.cwd || this.cwd, model: s?.model || this.model };
-        if (s?.nodeId) body.nodeId = s.nodeId;
-        const res = await fetch('/api/query', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        const data = await res.json();
-        if (data.error) { this.msg('append', { type: 'error', error: data.error }); return; }
-        this.activeSet.add(this.currentId);
-        this.syncActive();
-        this.connectSSE(this.currentId);
-      } catch (err) {
-        this.msg('append', { type: 'error', error: err.message });
-      }
-    },
-
-    async interruptSession() {
-      if (!this.currentId) return;
-      const s = this.managed.find(s => s.sessionId === this.currentId);
-      const headers = {};
-      if (this.panelMode && s?.nodeId) headers['x-node-id'] = s.nodeId;
-      try { await fetch(`/api/interrupt/${this.currentId}`, { method: 'POST', headers }); } catch {}
-    },
-
-    async changeModel() {
-      if (!this.currentId) return;
-      const s = this.managed.find(s => s.sessionId === this.currentId);
-      if (s) {
-        s.model = this.model;
-        this.saveManagedItem(s);
-      }
-      try {
-        const headers = { 'Content-Type': 'application/json' };
-        if (this.panelMode && s?.nodeId) headers['x-node-id'] = s.nodeId;
-        await fetch(`/api/model/${this.currentId}`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ model: this.model }),
-        });
-      } catch {}
-    },
-
-    async switchSession(id) {
-      if (this.currentId === id) return;
-      this.currentId = id;
-      this.msg('clear');
-      this.seenUuids = new Set();
-      this.totalCost = 0;
-      this.totalIn = 0;
-      this.totalOut = 0;
-
-      const s = this.managed.find(s => s.sessionId === id);
-      if (s) {
-        if (this.panelMode && s.nodeId) {
-          this.expandGroup('node:' + s.nodeId);
-          this.expandGroup(s.nodeId + ':' + (s.cwd || this.cwd));
-        } else {
-          this.expandGroup(s.cwd);
-        }
-        this.cwd = s.cwd || this.cwd;
-        if (s.model) this.model = s.model;
-        if (s.nodeId) this.selectedNodeId = s.nodeId;
-      }
-
-      try {
-        const cwd = s?.cwd || this.cwd;
-        const params = new URLSearchParams({ cwd });
-        if (this.panelMode && s?.nodeId) params.set('nodeId', s.nodeId);
-        const res = await fetch(`/api/sessions/${id}/messages?${params}`);
-        if (res.ok) {
-          const msgs = (await res.json()) || [];
-          for (const m of msgs) { if (m.uuid) this.seenUuids.add(m.uuid); }
-          this.msg('load', msgs);
-        }
-      } catch {}
-
-      this.connectSSE(id);
-    },
-
-    connectSSE(id) {
-      if (this.eventSource) this.eventSource.close();
-      const es = new EventSource(`/api/events/${id}`);
-      this.eventSource = es;
-      es.addEventListener('message', (e) => {
-        if (this.currentId !== id) { es.close(); return; }
-        try { this.handleEvent(JSON.parse(e.data)); } catch {}
-      });
-      es.addEventListener('error', () => {
-        if (this.currentId !== id || !this.activeSet.has(id)) {
-          es.close();
-          if (this.eventSource === es) this.eventSource = null;
-        }
-      });
-    },
-
-    handleEvent(msg) {
-      if (msg.uuid && msg.type !== 'stream_event') {
-        if (this.seenUuids.has(msg.uuid)) {
-          if (msg.type === 'assistant') this.msg('reset-stream');
-          return;
-        }
-        this.seenUuids.add(msg.uuid);
-      }
-
-      if (msg.type === 'stream_event') {
-        this.msg('stream', msg.event);
-      } else if (msg.type === 'assistant') {
-        this.msg('reset-stream');
-        this.msg('append', msg);
-      } else if (msg.type === 'user') {
-        this.msg('append', msg);
-      } else if (msg.type === 'result') {
-        this.totalCost += msg.total_cost_usd || 0;
-        this.totalIn += msg.usage?.input_tokens || 0;
-        this.totalOut += msg.usage?.output_tokens || 0;
-        this.msg('append', msg);
-      } else if (msg.type === 'system') {
-        if (msg.subtype === 'init' && this.seenUuids.size > 0) return;
-        this.msg('append', msg);
-      } else if (msg.type === 'status') {
-        if (msg.status === 'idle') {
-          this.activeSet.delete(this.currentId);
-          this.activeSet = new Set(this.activeSet);
-          this.syncActive();
-        }
-      } else if (msg.type === 'error') {
-        this.msg('append', msg);
-      }
-    },
-
-    async loadSessions() {
-      this.showLoadModal = true;
-      this.browseCwd = '';
-      this.browseOffset = 0;
-      this.browseSessions = [];
-      this.browseExpanded = new Set();
-      this.fetchBrowseSessions();
-    },
-
-    async fetchBrowseSessions(append = false) {
-      this.browseLoading = true;
-      try {
-        const params = new URLSearchParams({ limit: String(this.browseLimit), offset: String(this.browseOffset) });
-        if (this.browseCwd) params.set('cwd', this.browseCwd);
-        const res = await fetch(`/api/sessions?${params}`);
-        const data = await res.json();
-        this.browseHasMore = Array.isArray(data) && data.length >= this.browseLimit;
-        this.browseSessions = append ? [...this.browseSessions, ...data] : data;
-      } catch {
-        if (!append) this.browseSessions = [];
-        this.browseHasMore = false;
-      }
-      this.browseLoading = false;
-    },
-
-    addToManaged(session) {
-      if (!this.managed.find(s => s.sessionId === session.sessionId)) {
-        const entry = {
-          sessionId: session.sessionId,
-          cwd: session.cwd || this.cwd,
-          model: '',
-          label: session.summary || session.firstPrompt?.slice(0, 40) || session.sessionId.slice(0, 12),
-        };
-        if (session.nodeId) entry.nodeId = session.nodeId;
-        this.managed.unshift(entry);
-        this.saveManagedItem(entry);
-        if (this.panelMode && session.nodeId) {
-          this.expandGroup('node:' + session.nodeId);
-          this.expandGroup(session.nodeId + ':' + (session.cwd || this.cwd));
-        } else {
-          this.expandGroup(session.cwd || this.cwd);
-        }
-      }
-      this.showLoadModal = false;
-      this.switchSession(session.sessionId);
-    },
-
-    async removeManaged(id) {
-      this.managed = this.managed.filter(s => s.sessionId !== id);
-      try { await fetch(`/api/managed/${encodeURIComponent(id)}`, { method: 'DELETE' }); } catch {}
-      if (this.currentId === id) {
-        this.currentId = null;
-        this.msg('clear');
-        if (this.eventSource) this.eventSource.close();
-      }
-    },
-  };
-}
-</script>
 
 </body>
 </html>

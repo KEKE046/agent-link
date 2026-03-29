@@ -1,5 +1,62 @@
 # Agent Link - Changes
 
+## v0.9.0
+
+- Unified backend: single entry point `src/main.ts` replaces 3 separate entry points
+  - `agent-link` — standalone (local node + HTTP)
+  - `agent-link --accept-nodes` — local node + accept remote nodes via WebSocket
+  - `agent-link --accept-nodes --no-local` — pure router (no local SDK)
+  - `agent-link --connect-to <url>` — node only, connect to remote panel
+  - `--port <n>` and `--name <name>` options
+- API routes written once in `routes.ts`, dispatched via `Router` by nodeId
+  - `router.ts`: routes to local `dispatch()` or remote `requestNode()` based on nodeId
+  - `dispatch.ts`: shared action→function mapping for both router and node connector
+  - Eliminates ~900 lines of duplicate route code between standalone and panel
+- Machine ID: `hostname-xxxxxxxx` (8-char device hash from `/etc/machine-id`)
+  - Replaces random `node-key` file and `node_timestamp_random` IDs
+  - `identity.ts`: deterministic, human-readable, stable across restarts
+- `managed-folders` API now available in all modes (was missing from panel)
+- Node approve/label admin endpoints moved to unified routes
+- Single build target: one binary for all modes
+- Protocol: `MsgRegister.key` → `MsgRegister.machineId`
+- Deleted: `server.ts`, `panel/server.ts`, `node/main.ts`, `node/key.ts`
+
+## v0.8.0
+
+- Replaced sidebar New/Load buttons with contextual "+" on node headers
+- Added "Add" modal with two tabs: Load Existing (browse with checkboxes) and New Session
+- Added managed folders: folders persist in sidebar even without sessions
+  - Backend: `ManagedFolder` type, `/api/managed-folders` CRUD endpoints
+  - `groupedSessions` merges managed folders into sidebar tree
+- Folder "…" context menu with Remove (removes folder + all sessions under it)
+- Browse tab: already-managed sessions/folders shown as checked + disabled
+- Smart folder clicks: 1 session → open directly, multiple → expand
+- Single folder in browse results auto-expands
+- Arrow (▸/▾) and folder name are separate click targets
+- Session count `(N)` only shown when N > 1
+- Unified sidebar action buttons (`.sidebar-btn` CSS, 24px, vertically aligned)
+- Light theme: hover bg fix (`#f3f4f6` → `#e5e7eb`), sidebar button light-theme overrides
+- Removed VSCode buttons, node approve, admin secret from frontend
+- Removed `vscode-ui.js` from assets
+
+## v0.7.0
+
+- Refactored frontend into modular components: `app.js`, `sidebar.js`, `vscode-ui.js`, `renderer.js`
+- `index.html` reduced from 1143 to ~285 lines — pure HTML skeleton, zero inline CSS/JS
+- Moved all inline styles to `tailwind.input.css`
+- Component communication via `emit()` global events, zero implicit method coupling
+  - sidebar → app: `session-switch`, `session-new`, `session-remove`, `session-add`
+  - sidebar → vscode: `vscode-open`, `vscode-stop`
+  - any → app: `data-refresh`
+  - app → sidebar: reactive state (`currentId`, `managed`, `activeSet`, etc.)
+- Sidebar auto-expands groups via `$watch('currentId')`, no event bridge needed
+- Unified sidebar template: panel and standalone share same rendering (standalone = single `(local)` node)
+- Extracted VSCode modal into independent `vscode-ui.js` component
+- Added `src/assets.ts` — centralized embed declarations for `bun build --compile`
+- Replaced per-file static routes with single wildcard handler in `server.ts`
+  - Dev mode: `Bun.file()` auto Content-Type, zero config when adding files
+  - Prod mode: embedded asset map lookup
+
 ## v0.6.0
 
 - Added Panel+Node distributed architecture: Panel (public) forwards all operations to Nodes (behind NAT) via WebSocket

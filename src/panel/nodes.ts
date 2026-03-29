@@ -13,7 +13,7 @@ interface NodeRecord {
 
 export interface ConnectedNode {
   nodeId: string;
-  key: string;
+  machineId: string;
   label: string;
   ws: WebSocket;
   online: boolean;
@@ -24,17 +24,15 @@ export interface ConnectedNode {
   lastHeartbeat: number;
 }
 
+// Persisted records keyed by machineId
 const nodeRecords = load<Record<string, NodeRecord>>("nodes", {});
+// Live connected nodes keyed by nodeId (= machineId)
 const nodes = new Map<string, ConnectedNode>();
-const nodeKeyById = new Map<string, string>();
+
 const pendingRequests = new Map<
   string,
   { resolve: (data: any) => void; reject: (err: Error) => void; timer: Timer }
 >();
-
-for (const [key, record] of Object.entries(nodeRecords)) {
-  nodeKeyById.set(record.nodeId, key);
-}
 
 const eventListeners = new Map<string, Set<Listener>>();
 const eventBuffers = new Map<string, any[]>();
@@ -48,40 +46,37 @@ export function getNode(nodeId: string): ConnectedNode | undefined {
 }
 
 export function listNodes(): {
-  nodeId: string;
-  label: string;
-  online: boolean;
-  approved: boolean;
-  activeSessionIds: string[];
-  vscodeServers: ConnectedNode["vscodeServers"];
+  nodeId: string; label: string; online: boolean; approved: boolean;
+  activeSessionIds: string[]; vscodeServers: ConnectedNode["vscodeServers"];
 }[] {
-  const knownIds = new Set<string>();
-  const data = Object.entries(nodeRecords).map(([key, record]) => {
-    const online = nodes.get(record.nodeId);
-    knownIds.add(record.nodeId);
-    return {
-      nodeId: record.nodeId,
-      label: online?.label || record.label,
-      online: !!online?.online,
-      approved: record.approved,
-      activeSessionIds: online?.activeSessionIds || [],
-      vscodeServers: online?.vscodeServers || [],
-      key,
-    };
-  });
-  for (const node of nodes.values()) {
-    if (knownIds.has(node.nodeId)) continue;
+  const seen = new Set<string>();
+  const data: any[] = [];
+
+  // Persisted records (includes offline nodes)
+  for (const [machineId, record] of Object.entries(nodeRecords)) {
+    seen.add(record.nodeId);
+    const live = nodes.get(record.nodeId);
     data.push({
-      nodeId: node.nodeId,
-      label: node.label,
-      online: node.online,
-      approved: node.approved,
-      activeSessionIds: node.activeSessionIds,
-      vscodeServers: node.vscodeServers,
-      key: node.key,
+      nodeId: record.nodeId,
+      label: live?.label || record.label,
+      online: !!live?.online,
+      approved: record.approved,
+      activeSessionIds: live?.activeSessionIds || [],
+      vscodeServers: live?.vscodeServers || [],
     });
   }
-  return data.map(({ key, ...rest }) => rest);
+
+  // Live nodes not yet persisted (shouldn't happen but be safe)
+  for (const node of nodes.values()) {
+    if (seen.has(node.nodeId)) continue;
+    data.push({
+      nodeId: node.nodeId, label: node.label, online: node.online,
+      approved: node.approved, activeSessionIds: node.activeSessionIds,
+      vscodeServers: node.vscodeServers,
+    });
+  }
+
+  return data;
 }
 
 function sendToNode(node: ConnectedNode, msg: PanelToNode) {
@@ -93,60 +88,42 @@ function sendToNode(node: ConnectedNode, msg: PanelToNode) {
 let reqCounter = 0;
 
 export function requestNode(
-  nodeId: string,
-  action: string,
-  params: any,
-  timeoutMs = 30000
+  nodeId: string, action: string, params: any, timeoutMs = 30000,
 ): Promise<any> {
   const node = nodes.get(nodeId);
   if (!node || !node.online || !node.approved) {
     return Promise.reject(new Error(`Node ${nodeId} is not online`));
   }
-
   const requestId = `r_${Date.now()}_${++reqCounter}`;
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       pendingRequests.delete(requestId);
       reject(new Error(`Request ${action} to node ${nodeId} timed out`));
     }, timeoutMs);
-
     pendingRequests.set(requestId, { resolve, reject, timer });
     sendToNode(node, { type: "request", requestId, action, params });
   });
 }
 
-export function subscribeSession(
-  sessionId: string,
-  listener: Listener
-): () => void {
+export function subscribeSession(sessionId: string, listener: Listener): () => void {
   const buf = eventBuffers.get(sessionId);
   if (buf) buf.forEach((msg) => listener(msg));
-
   if (!eventListeners.has(sessionId)) eventListeners.set(sessionId, new Set());
   eventListeners.get(sessionId)!.add(listener);
-
-  return () => {
-    eventListeners.get(sessionId)?.delete(listener);
-  };
+  return () => { eventListeners.get(sessionId)?.delete(listener); };
 }
 
 function broadcastEvent(sessionId: string, event: any) {
   if (!eventBuffers.has(sessionId)) eventBuffers.set(sessionId, []);
   eventBuffers.get(sessionId)!.push(event);
-  eventListeners.get(sessionId)?.forEach((fn) => {
-    try {
-      fn(event);
-    } catch {}
-  });
+  eventListeners.get(sessionId)?.forEach((fn) => { try { fn(event); } catch {} });
 }
 
 export function clearEventBuffer(sessionId: string) {
   eventBuffers.set(sessionId, []);
 }
 
-export function findNodeForSession(
-  sessionId: string
-): ConnectedNode | undefined {
+export function findNodeForSession(sessionId: string): ConnectedNode | undefined {
   for (const node of nodes.values()) {
     if (node.activeSessionIds.includes(sessionId)) return node;
   }
@@ -160,11 +137,7 @@ export function sendRaw(nodeId: string, msg: PanelToNode) {
 
 export function handleNodeMessage(nodeId: string, raw: string) {
   let msg: NodeToPanel;
-  try {
-    msg = JSON.parse(raw);
-  } catch {
-    return;
-  }
+  try { msg = JSON.parse(raw); } catch { return; }
 
   const node = nodes.get(nodeId);
 
@@ -178,13 +151,9 @@ export function handleNodeMessage(nodeId: string, raw: string) {
         }
       }
       break;
-
     case "event":
-      if (node?.approved) {
-        broadcastEvent(msg.sessionId, msg.event);
-      }
+      if (node?.approved) broadcastEvent(msg.sessionId, msg.event);
       break;
-
     case "response": {
       const pending = pendingRequests.get(msg.requestId);
       if (pending) {
@@ -194,17 +163,15 @@ export function handleNodeMessage(nodeId: string, raw: string) {
       }
       break;
     }
-
     case "error": {
-      const pending2 = pendingRequests.get(msg.requestId);
-      if (pending2) {
-        clearTimeout(pending2.timer);
+      const pending = pendingRequests.get(msg.requestId);
+      if (pending) {
+        clearTimeout(pending.timer);
         pendingRequests.delete(msg.requestId);
-        pending2.reject(new Error(msg.error));
+        pending.reject(new Error(msg.error));
       }
       break;
     }
-
     case "tunnel:response":
     case "tunnel:ws-opened":
     case "tunnel:ws-data":
@@ -214,10 +181,7 @@ export function handleNodeMessage(nodeId: string, raw: string) {
   }
 }
 
-type TunnelMessageHandler = (
-  msg: Extract<NodeToPanel, { type: `tunnel:${string}` }>
-) => void;
-
+type TunnelMessageHandler = (msg: Extract<NodeToPanel, { type: `tunnel:${string}` }>) => void;
 let tunnelHandler: TunnelMessageHandler | null = null;
 
 export function onTunnelMessage(handler: TunnelMessageHandler) {
@@ -225,55 +189,41 @@ export function onTunnelMessage(handler: TunnelMessageHandler) {
 }
 
 export function registerNode(
-  ws: WebSocket,
-  key: string,
-  label: string
+  ws: WebSocket, machineId: string, label: string,
 ): { nodeId: string; approved: boolean } {
   const now = Date.now();
-  let record = nodeRecords[key];
+  // machineId IS the nodeId — no separate ID generation
+  const nodeId = machineId;
+
+  let record = nodeRecords[machineId];
   if (!record) {
-    const nodeId = `node_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    record = {
-      nodeId,
-      label,
-      approved: false,
-      firstSeen: now,
-      lastSeen: now,
-    };
-    nodeRecords[key] = record;
+    record = { nodeId, label, approved: false, firstSeen: now, lastSeen: now };
+    nodeRecords[machineId] = record;
     persistNodeRecords();
   } else {
     record.label = label || record.label;
     record.lastSeen = now;
     persistNodeRecords();
   }
-  nodeKeyById.set(record.nodeId, key);
 
-  const existing = nodes.get(record.nodeId);
+  // Close existing connection if any
+  const existing = nodes.get(nodeId);
   if (existing && existing.ws !== ws && existing.ws.readyState !== WebSocket.CLOSED) {
     existing.ws.close();
   }
 
-  nodes.set(record.nodeId, {
-    nodeId: record.nodeId,
-    key,
-    label: record.label,
-    ws: ws as any,
-    online: true,
-    approved: record.approved,
-    activeSessionIds: [],
-    vscodeServers: [],
-    connectedAt: now,
-    lastHeartbeat: now,
+  nodes.set(nodeId, {
+    nodeId, machineId, label: record.label,
+    ws: ws as any, online: true, approved: record.approved,
+    activeSessionIds: [], vscodeServers: [],
+    connectedAt: now, lastHeartbeat: now,
   });
 
-  return { nodeId: record.nodeId, approved: record.approved };
+  return { nodeId, approved: record.approved };
 }
 
 export function approveNode(nodeId: string): boolean {
-  const key = nodeKeyById.get(nodeId);
-  if (!key) return false;
-  const record = nodeRecords[key];
+  const record = nodeRecords[nodeId];
   if (!record) return false;
   record.approved = true;
   record.lastSeen = Date.now();
@@ -287,10 +237,8 @@ export function approveNode(nodeId: string): boolean {
 }
 
 export function renameNode(nodeId: string, label: string): boolean {
-  const key = nodeKeyById.get(nodeId);
-  if (!key || !label) return false;
-  const record = nodeRecords[key];
-  if (!record) return false;
+  const record = nodeRecords[nodeId];
+  if (!record || !label) return false;
   record.label = label;
   record.lastSeen = Date.now();
   persistNodeRecords();
@@ -305,18 +253,14 @@ export function markOffline(nodeId: string) {
     node.online = false;
     node.activeSessionIds = [];
     node.vscodeServers = [];
-    const record = nodeRecords[node.key];
-    if (record) {
-      record.lastSeen = Date.now();
-      persistNodeRecords();
-    }
+    const record = nodeRecords[node.machineId];
+    if (record) { record.lastSeen = Date.now(); persistNodeRecords(); }
   }
 }
 
+// Periodic ping to keep connections alive
 setInterval(() => {
   for (const node of nodes.values()) {
-    if (node.online) {
-      sendToNode(node, { type: "ping" });
-    }
+    if (node.online) sendToNode(node, { type: "ping" });
   }
 }, 30000);

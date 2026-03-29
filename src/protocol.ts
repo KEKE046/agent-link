@@ -4,7 +4,7 @@
 
 export interface MsgRegister {
   type: "register";
-  key: string;
+  machineId: string;
   label: string;
 }
 
