@@ -1,31 +1,22 @@
 // Sidebar component — nested inside app(), inherits parent scope for reading:
 //   managed, managedFolders, nodes, currentId, activeSet, panelMode, cwd, sidebarWidth, sidebarCollapsed, clampWidth
 // Communicates outward via emit():
-//   session-switch, session-new, session-remove, session-add, session-create, folder-add, folder-remove, data-refresh
+//   session-switch, session-remove, agent-create, folder-add, folder-remove, folder-rename, data-refresh
 
 function sidebar() {
   return {
     expandedGroups: new Set(),
-
-    // Add modal
-    addModal: null,  // {nodeId, tab: 'browse'|'add'}
-    newCwd: '',
     folderMenu: null,
     renamePopup: null,  // {cwd, nodeId, label}
-    browseSessions: [],
-    browseLoading: false,
-    browseFilter: '',
-    browseLimit: 30,
-    browseOffset: 0,
-    browseHasMore: false,
-    browseExpanded: new Set(),
-    browseCheckedSessions: new Set(),
-    browseCheckedFolders: new Set(),
+    nodeMenu: null,     // nodeId or null
+    folderPopup: null,
+    menuPos: { top: 0, left: 0 }, // fixed position for dropdown menus
+
+    // Add-agent dialog
+    agentDialog: null,  // {nodeId, cwd, tab:'new'|'load', name, initialPrompt, configOpen, ...browseState}
 
     init() {
-      // Auto-expand the local node in standalone mode
       if (!this.panelMode) this.expandGroup('node:(local)');
-      // Auto-expand group when currentId changes
       this.$watch('currentId', (id) => {
         if (!id) return;
         const s = this.managed.find(s => s.sessionId === id);
@@ -34,16 +25,22 @@ function sidebar() {
         this.expandGroup('node:' + nid);
         this.expandGroup(nid + ':' + (s.cwd || this.cwd));
       });
-      // Auto-expand when pendingNew is set
-      this.$watch('pendingNew', (p) => {
-        if (!p) return;
-        const nid = p.nodeId || '(local)';
-        this.expandGroup('node:' + nid);
-        this.expandGroup(nid + ':' + (p.cwd || this.cwd));
-      });
     },
 
     // --- Groups ---
+
+    openMenu(el, key, menuType) {
+      const rect = el.getBoundingClientRect();
+      this.menuPos = { top: rect.bottom + 2, left: rect.right - 112 };
+      if (menuType === 'folder') {
+        this.folderMenu = this.folderMenu === key ? null : key;
+        this.nodeMenu = null;
+      } else {
+        this.nodeMenu = this.nodeMenu === key ? null : key;
+        this.folderMenu = null;
+      }
+    },
+
     toggleGroup(key) {
       this.expandedGroups.has(key) ? this.expandedGroups.delete(key) : this.expandedGroups.add(key);
       this.expandedGroups = new Set(this.expandedGroups);
@@ -53,9 +50,6 @@ function sidebar() {
       this.expandedGroups = new Set(this.expandedGroups);
     },
 
-    // Unified: always returns [{nodeId, label, approved, cwdGroups: [{cwd, sessions}]}]
-    // Merges managedFolders so empty folders still appear.
-    // Standalone mode: always shows a "(local)" node.
     get groupedSessions() {
       const nodeMap = new Map();
       if (!this.panelMode) {
@@ -65,7 +59,6 @@ function sidebar() {
         nodeMap.set(n.nodeId, { nodeId: n.nodeId, label: n.label, approved: n.approved, cwdGroups: [] });
       }
       const cwdMap = new Map();
-      // Add managed folders first (may be empty)
       for (const f of this.managedFolders) {
         const nid = f.nodeId || '(local)';
         const key = nid + ':' + f.cwd;
@@ -82,21 +75,11 @@ function sidebar() {
           nodeMap.set(group.nodeId, { nodeId: group.nodeId, label: group.nodeId, approved: true, cwdGroups: [] });
         nodeMap.get(group.nodeId).cwdGroups.push(group);
       }
-      // Inject pending new session placeholder
-      if (this.pendingNew) {
-        const nid = this.pendingNew.nodeId || '(local)';
-        const pcwd = this.pendingNew.cwd || this.cwd;
-        if (!nodeMap.has(nid))
-          nodeMap.set(nid, { nodeId: nid, label: nid, approved: true, cwdGroups: [] });
-        const node = nodeMap.get(nid);
-        let cwdGroup = node.cwdGroups.find(g => g.cwd === pcwd);
-        if (!cwdGroup) { cwdGroup = { nodeId: nid, cwd: pcwd, sessions: [] }; node.cwdGroups.push(cwdGroup); }
-        cwdGroup.sessions.unshift({ sessionId: '__pending__', label: '(New Session)', cwd: pcwd, nodeId: this.pendingNew.nodeId, _pending: true });
-      }
       return [...nodeMap.values()];
     },
 
     // --- Resize ---
+
     startResize(event) {
       if (this.sidebarCollapsed) return;
       const startX = event.touches?.[0]?.clientX ?? event.clientX;
@@ -130,11 +113,10 @@ function sidebar() {
       if (this.sidebarCollapsed) return;
       if (event.key === 'ArrowLeft') { event.preventDefault(); this.sidebarWidth = this.clampWidth(this.sidebarWidth - 12); }
       else if (event.key === 'ArrowRight') { event.preventDefault(); this.sidebarWidth = this.clampWidth(this.sidebarWidth + 12); }
-      else if (event.key === 'Home') { event.preventDefault(); this.sidebarWidth = 180; }
-      else if (event.key === 'End') { event.preventDefault(); this.sidebarWidth = 480; }
     },
 
     // --- Node ---
+
     isNodeOnline(nodeId) {
       if (nodeId === '(local)') return true;
       return this.nodes.find(n => n.nodeId === nodeId)?.online ?? false;
@@ -155,6 +137,7 @@ function sidebar() {
     },
 
     // --- Folder management ---
+
     isManagedFolder(cwd, nodeId) {
       const nid = (!nodeId || nodeId === '(local)') ? '' : nodeId;
       return this.managedFolders.some(f => f.cwd === cwd && (f.nodeId || '') === nid);
@@ -182,120 +165,163 @@ function sidebar() {
       this.renamePopup = null;
     },
 
-    // --- Add modal ---
-    openAddModal(nodeId, cwd) {
-      this.addModal = { nodeId: nodeId || '(local)' };
-      this.newCwd = cwd || this.cwd;
-      this.browseFilter = cwd || '';
-      this.browseCheckedSessions = new Set();
-      this.browseCheckedFolders = new Set();
-      this.browseSessions = [];
-      this.browseOffset = 0;
-      this.browseHasMore = false;
-      this.browseExpanded = new Set();
-      // Default to 'browse' tab
-      this.addModal.tab = 'browse';
-      this.fetchBrowseSessions();
+    // --- Add-folder popup ---
+
+    openFolderPopup(nodeId) {
+      this.nodeMenu = null;
+      this.folderPopup = { nodeId: nodeId || '(local)', cwd: '', folders: [], loading: true };
+      this.$nextTick(() => document.querySelector('#folder-cwd-input')?.focus());
+      this.fetchFolderList();
     },
 
-    async fetchBrowseSessions(append = false) {
-      this.browseLoading = true;
+    async fetchFolderList() {
+      if (!this.folderPopup) return;
       try {
-        const params = new URLSearchParams({ limit: String(this.browseLimit), offset: String(this.browseOffset) });
-        if (this.browseFilter) params.set('cwd', this.browseFilter);
+        const data = await (await fetch('/api/sessions?limit=200')).json();
+        const cwdSet = new Set();
+        for (const s of (data || [])) { if (s.cwd) cwdSet.add(s.cwd); }
+        // Exclude already-managed folders for this node
+        const nid = this.folderPopup.nodeId;
+        const managed = new Set(this.managedFolders.filter(f => (f.nodeId || '(local)') === nid).map(f => f.cwd));
+        this.folderPopup.folders = [...cwdSet].filter(c => !managed.has(c)).sort();
+      } catch { this.folderPopup.folders = []; }
+      this.folderPopup.loading = false;
+    },
+
+    submitFolderPopup() {
+      if (!this.folderPopup || !this.folderPopup.cwd.trim()) return;
+      const nodeId = this.folderPopup.nodeId === '(local)' ? undefined : this.folderPopup.nodeId;
+      emit('folder-add', { cwd: this.folderPopup.cwd.trim(), nodeId });
+      this.folderPopup = null;
+    },
+
+    // --- Add-agent dialog ---
+
+    openAgentDialog(nodeId, cwd) {
+      this.nodeMenu = null;
+      this.agentDialog = {
+        nodeId: nodeId || '(local)',
+        cwd: cwd || this.cwd,
+        tab: 'new',
+        name: '',
+        initialPrompt: '',
+        configOpen: false,
+        // Config fields
+        cfgModel: '',
+        cfgThinking: '',
+        cfgEffort: '',
+        cfgPermission: '',
+        cfgSystemPrompt: '',
+        cfgEnvText: '',
+        cfgJsonText: '{}',
+        cfgJsonError: '',
+        cfgShowSystemPrompt: false,
+        cfgShowEnv: false,
+        cfgShowJson: false,
+        // Browse state
+        browseSessions: [],
+        browseLoading: false,
+        browseFilter: cwd || '',
+        browseExact: !!cwd,
+        browseLimit: 30,
+        browseOffset: 0,
+        browseHasMore: false,
+        browseSelected: null,
+      };
+    },
+
+    buildDialogParams() {
+      const d = this.agentDialog;
+      if (!d) return {};
+      const p = {};
+      if (d.cfgModel) p.model = d.cfgModel;
+      if (d.cfgThinking) p.thinking = { type: d.cfgThinking };
+      if (d.cfgEffort) p.effort = d.cfgEffort;
+      if (d.cfgPermission) p.permissionMode = d.cfgPermission;
+      // System prompt: use user's input, or default "Your Name is {name}"
+      const sysPrompt = d.cfgSystemPrompt.trim() || (d.name.trim() ? `Your Name is ${d.name.trim()}` : '');
+      if (sysPrompt) {
+        p.systemPrompt = { type: 'preset', preset: 'claude_code', append: sysPrompt };
+      }
+      if (d.cfgEnvText.trim()) {
+        const env = {};
+        for (const line of d.cfgEnvText.split('\n')) {
+          const idx = line.indexOf('=');
+          if (idx > 0) env[line.slice(0, idx).trim()] = line.slice(idx + 1);
+        }
+        if (Object.keys(env).length > 0) p.env = env;
+      }
+      return p;
+    },
+
+    syncDialogJson() {
+      const d = this.agentDialog;
+      if (!d) return;
+      d.cfgJsonText = JSON.stringify(this.buildDialogParams(), null, 2);
+    },
+
+    syncDialogFromJson() {
+      const d = this.agentDialog;
+      if (!d) return;
+      try {
+        const p = JSON.parse(d.cfgJsonText);
+        d.cfgJsonError = '';
+        d.cfgModel = p.model || '';
+        d.cfgThinking = p.thinking?.type || '';
+        d.cfgEffort = p.effort || '';
+        d.cfgPermission = p.permissionMode || '';
+        if (typeof p.systemPrompt === 'string') d.cfgSystemPrompt = p.systemPrompt;
+        else if (p.systemPrompt?.append) d.cfgSystemPrompt = p.systemPrompt.append;
+        else d.cfgSystemPrompt = '';
+        const env = p.env || {};
+        d.cfgEnvText = Object.entries(env).map(([k, v]) => `${k}=${v}`).join('\n');
+      } catch (e) { d.cfgJsonError = e.message; }
+    },
+
+    // Browse sessions for Load tab
+    async fetchBrowseSessions(append = false) {
+      const d = this.agentDialog;
+      if (!d) return;
+      d.browseLoading = true;
+      try {
+        const params = new URLSearchParams({ limit: String(d.browseLimit), offset: String(d.browseOffset) });
+        // Exact mode: pass cwd to API for server-side filtering
+        if (d.browseFilter && d.browseExact) params.set('cwd', d.browseFilter);
         const data = await (await fetch(`/api/sessions?${params}`)).json();
-        this.browseHasMore = Array.isArray(data) && data.length >= this.browseLimit;
-        this.browseSessions = append ? [...this.browseSessions, ...data] : data;
+        let filtered = Array.isArray(data) ? data : [];
+        // Contains mode: filter client-side by substring
+        if (d.browseFilter && !d.browseExact) {
+          const q = d.browseFilter.toLowerCase();
+          filtered = filtered.filter(s => (s.cwd || '').toLowerCase().includes(q));
+        }
+        d.browseHasMore = Array.isArray(data) && data.length >= d.browseLimit;
+        d.browseSessions = append ? [...d.browseSessions, ...filtered] : filtered;
       } catch {
-        if (!append) this.browseSessions = [];
-        this.browseHasMore = false;
+        if (!append) d.browseSessions = [];
+        d.browseHasMore = false;
       }
-      this.browseLoading = false;
-      // Auto-expand if only one folder group
-      if (!append) {
-        const groups = this.groupedBrowse;
-        if (groups.length === 1) {
-          this.browseExpanded.add(groups[0].cwd);
-          this.browseExpanded = new Set(this.browseExpanded);
-        }
-      }
+      d.browseLoading = false;
     },
 
-    get groupedBrowse() {
-      const map = new Map();
-      for (const s of this.browseSessions) {
-        const key = s.cwd || '(unknown)';
-        if (!map.has(key)) map.set(key, []);
-        map.get(key).push(s);
-      }
-      return Array.from(map, ([cwd, sessions]) => ({ cwd, sessions }));
-    },
+    submitAgentDialog() {
+      const d = this.agentDialog;
+      if (!d || !d.name.trim()) return;
 
-    toggleBrowseSession(sessionId) {
-      if (this.browseCheckedSessions.has(sessionId)) this.browseCheckedSessions.delete(sessionId);
-      else this.browseCheckedSessions.add(sessionId);
-      this.browseCheckedSessions = new Set(this.browseCheckedSessions);
-    },
+      const params = { claude: this.buildDialogParams() };
+      const nodeId = d.nodeId === '(local)' ? undefined : d.nodeId;
 
-    toggleBrowseFolder(cwd) {
-      if (this.browseCheckedFolders.has(cwd)) this.browseCheckedFolders.delete(cwd);
-      else this.browseCheckedFolders.add(cwd);
-      this.browseCheckedFolders = new Set(this.browseCheckedFolders);
-    },
-
-    browseClickFolder(g) {
-      if (g.sessions.length === 1) {
-        const s = g.sessions[0];
-        const nid = this.addModal?.nodeId === '(local)' ? undefined : this.addModal?.nodeId;
-        if (!this.isSessionManaged(s.sessionId)) {
-          emit('session-add', {
-            sessionId: s.sessionId, cwd: s.cwd || this.cwd, nodeId: nid,
-            label: s.summary || s.firstPrompt?.slice(0, 40) || s.sessionId.slice(0, 12),
-          });
-        }
-        emit('session-switch', s.sessionId);
-        this.addModal = null;
+      if (d.tab === 'load' && d.browseSelected) {
+        emit('agent-create', {
+          name: d.name.trim(), cwd: d.cwd, nodeId, params,
+          loadSessionId: d.browseSelected,
+        });
       } else {
-        if (this.browseExpanded.has(g.cwd)) this.browseExpanded.delete(g.cwd);
-        else this.browseExpanded.add(g.cwd);
-        this.browseExpanded = new Set(this.browseExpanded);
+        emit('agent-create', {
+          name: d.name.trim(), cwd: d.cwd, nodeId, params,
+          initialPrompt: d.initialPrompt,
+        });
       }
-    },
-
-    get hasChecked() {
-      return this.browseCheckedSessions.size > 0 || this.browseCheckedFolders.size > 0;
-    },
-
-    createNewSession() {
-      if (!this.newCwd.trim()) return;
-      const nodeId = this.addModal?.nodeId;
-      emit('session-create', { cwd: this.newCwd.trim(), nodeId: nodeId === '(local)' ? undefined : nodeId });
-      this.addModal = null;
-    },
-
-    addSelected() {
-      const nodeId = this.addModal?.nodeId;
-      const nid = nodeId === '(local)' ? undefined : nodeId;
-      // Add checked folders
-      for (const cwd of this.browseCheckedFolders) {
-        emit('folder-add', { cwd, nodeId: nid });
-      }
-      // Add checked sessions
-      for (const sessionId of this.browseCheckedSessions) {
-        const session = this.browseSessions.find(s => s.sessionId === sessionId);
-        if (session) {
-          emit('session-add', {
-            sessionId, cwd: session.cwd || this.cwd, nodeId: nid,
-            label: session.summary || session.firstPrompt?.slice(0, 40) || sessionId.slice(0, 12),
-          });
-        }
-      }
-      // Switch to the first checked session
-      if (this.browseCheckedSessions.size > 0) {
-        const first = this.browseCheckedSessions.values().next().value;
-        emit('session-switch', first);
-      }
-      this.addModal = null;
+      this.agentDialog = null;
     },
   };
 }

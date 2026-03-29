@@ -135,3 +135,9 @@ body.light-theme .bg-black\/60 { background-color: rgba(17, 24, 39, 0.35) !impor
 body.light-theme .sidebar-btn { color: #9ca3af; }
 body.light-theme .sidebar-btn:hover { background: #d1d5db; color: #111827; }
 body.light-theme .sidebar-btn-danger:hover { background: transparent; color: #ef4444; }
+body.light-theme .bg-blue-600, body.light-theme .bg-blue-600:hover { color: #ffffff !important; }
+body.light-theme .bg-red-700, body.light-theme .bg-red-700:hover { color: #ffffff !important; }
+body.light-theme .disabled\:bg-gray-700:disabled { background-color: #e5e7eb !important; color: #9ca3af !important; }
+body.light-theme input, body.light-theme textarea, body.light-theme select { background-color: #f9fafb !important; border-color: #d1d5db !important; color: #111827 !important; }
+body.light-theme input::placeholder, body.light-theme textarea::placeholder { color: #9ca3af !important; }
+body.light-theme .border-gray-700 { border-color: #d1d5db !important; }

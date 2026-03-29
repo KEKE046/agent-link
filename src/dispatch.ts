@@ -14,6 +14,7 @@ export async function dispatch(action: string, params: any): Promise<any> {
     case "query":
       return { sessionId: await sessions.startQuery(params.prompt, {
         sessionId: params.sessionId, cwd: params.cwd, model: params.model,
+        claudeParams: params.claudeParams,
       })};
     case "interrupt":
       await sessions.interrupt(params.sessionId);
