@@ -1,5 +1,23 @@
 # Agent Link - Changes
 
+## v0.7.0
+
+- Refactored frontend into modular components: `app.js`, `sidebar.js`, `vscode-ui.js`, `renderer.js`
+- `index.html` reduced from 1143 to ~285 lines — pure HTML skeleton, zero inline CSS/JS
+- Moved all inline styles to `tailwind.input.css`
+- Component communication via `emit()` global events, zero implicit method coupling
+  - sidebar → app: `session-switch`, `session-new`, `session-remove`, `session-add`
+  - sidebar → vscode: `vscode-open`, `vscode-stop`
+  - any → app: `data-refresh`
+  - app → sidebar: reactive state (`currentId`, `managed`, `activeSet`, etc.)
+- Sidebar auto-expands groups via `$watch('currentId')`, no event bridge needed
+- Unified sidebar template: panel and standalone share same rendering (standalone = single `(local)` node)
+- Extracted VSCode modal into independent `vscode-ui.js` component
+- Added `src/assets.ts` — centralized embed declarations for `bun build --compile`
+- Replaced per-file static routes with single wildcard handler in `server.ts`
+  - Dev mode: `Bun.file()` auto Content-Type, zero config when adding files
+  - Prod mode: embedded asset map lookup
+
 ## v0.6.0
 
 - Added Panel+Node distributed architecture: Panel (public) forwards all operations to Nodes (behind NAT) via WebSocket

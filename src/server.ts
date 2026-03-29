@@ -10,19 +10,16 @@ import {
   startVscodeServer,
   stopVscodeServer,
 } from "./vscode";
-import indexHtml from "./public/index.html" with { type: "text" };
-import rendererJs from "./public/renderer.js" with { type: "text" };
-import stylesCss from "./public/styles.css" with { type: "text" };
+import assets from "./assets";
 
 const app = new Hono();
 const isDev = Bun.env.NODE_ENV === "development";
 
-async function readAsset(path: string, embedded: string): Promise<string> {
-  if (!isDev) return embedded;
-  const file = Bun.file(import.meta.dir + path);
-  if (!(await file.exists())) return embedded;
-  return file.text();
-}
+const MIME: Record<string, string> = {
+  html: "text/html; charset=utf-8",
+  js: "application/javascript",
+  css: "text/css; charset=utf-8",
+};
 
 // --- VSCode reverse proxy helpers ---
 
@@ -218,22 +215,19 @@ app.get("/api/vscode/install-command", (c) => {
   return c.json(getInstallCommand(c.req.query("version") || undefined));
 });
 
-// Serve static assets
-app.get("/renderer.js", async (c) => {
-  return new Response(await readAsset("/public/renderer.js", rendererJs), {
-    headers: { "Content-Type": "application/javascript" },
-  });
-});
-
-app.get("/styles.css", async (c) => {
-  return new Response(await readAsset("/public/styles.css", stylesCss), {
-    headers: { "Content-Type": "text/css; charset=utf-8" },
-  });
-});
-
-// Serve index.html
-app.get("/", async (c) => {
-  return c.html(await readAsset("/public/index.html", indexHtml));
+// Serve static assets (dev: disk with auto Content-Type, prod: embedded map)
+app.get("/*", async (c) => {
+  const name = c.req.path === "/" ? "index.html" : c.req.path.slice(1);
+  if (isDev) {
+    const f = Bun.file(`${import.meta.dir}/public/${name}`);
+    if (await f.exists()) return new Response(f);
+  } else if (name in assets) {
+    const ext = name.split(".").pop()!;
+    return new Response(assets[name], {
+      headers: { "Content-Type": MIME[ext] || "text/plain" },
+    });
+  }
+  return c.notFound();
 });
 
 export default {
