@@ -88,6 +88,18 @@
 .sidebar-btn:hover { background: #374151; color: #e5e7eb; }
 .sidebar-btn-danger:hover { background: transparent; color: #f87171; }
 
+/* Header buttons */
+.header-btn {
+  width: 1.75rem; height: 1.75rem;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 0.25rem; font-size: 0.9rem; line-height: 1;
+  color: #6b7280; cursor: pointer; flex-shrink: 0;
+  background: transparent; border: none; padding: 0;
+}
+.header-btn:hover { background: #1f2937; color: #e5e7eb; }
+/* Force text rendering for emoji — prevents ☀ and ⚙ from rendering as colorful emoji */
+.emoji-text { font-variant-emoji: text; }
+
 /* Light theme */
 body.light-theme {
   background: #f3f4f6; color: #111827;
@@ -141,3 +153,5 @@ body.light-theme .disabled\:bg-gray-700:disabled { background-color: #e5e7eb !im
 body.light-theme input, body.light-theme textarea, body.light-theme select { background-color: #f9fafb !important; border-color: #d1d5db !important; color: #111827 !important; }
 body.light-theme input::placeholder, body.light-theme textarea::placeholder { color: #9ca3af !important; }
 body.light-theme .border-gray-700 { border-color: #d1d5db !important; }
+body.light-theme .header-btn { color: #9ca3af; }
+body.light-theme .header-btn:hover { background: #f3f4f6; color: #374151; }
