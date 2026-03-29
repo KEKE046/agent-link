@@ -9,6 +9,8 @@ function sidebar() {
     folderMenu: null,
     renamePopup: null,  // {cwd, nodeId, label}
     nodeMenu: null,     // nodeId or null
+    agentMenu: null,    // sessionId or null
+    confirmDialog: null, // {message, onConfirm}
     folderPopup: null,
     menuPos: { top: 0, left: 0 }, // fixed position for dropdown menus
 
@@ -34,11 +36,18 @@ function sidebar() {
       this.menuPos = { top: rect.bottom + 2, left: rect.right - 112 };
       if (menuType === 'folder') {
         this.folderMenu = this.folderMenu === key ? null : key;
-        this.nodeMenu = null;
+        this.nodeMenu = null; this.agentMenu = null;
+      } else if (menuType === 'agent') {
+        this.agentMenu = this.agentMenu === key ? null : key;
+        this.nodeMenu = null; this.folderMenu = null;
       } else {
         this.nodeMenu = this.nodeMenu === key ? null : key;
-        this.folderMenu = null;
+        this.folderMenu = null; this.agentMenu = null;
       }
+    },
+
+    confirmRemove(message, id, type) {
+      this.confirmDialog = { message, id, type };
     },
 
     toggleGroup(key) {
@@ -132,7 +141,7 @@ function sidebar() {
     async removeNode(nodeId) {
       try {
         await fetch(`/api/nodes/${encodeURIComponent(nodeId)}`, { method: 'DELETE' });
-        emit('data-refresh');
+        emit('node-removed', nodeId);
       } catch {}
     },
 

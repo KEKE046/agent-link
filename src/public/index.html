@@ -40,7 +40,8 @@
      @folder-remove.window="removeFolder($event.detail)"
      @folder-rename.window="renameFolder($event.detail)"
      @config-save.window="onConfigSave($event.detail)"
-     @data-refresh.window="refreshData()">
+     @data-refresh.window="refreshData()"
+     @node-removed.window="removeNodeManaged($event.detail)">
 
   <!-- Login screen -->
   <template x-if="authRequired && !authenticated">
@@ -78,8 +79,8 @@
               <button x-show="n.approved === false && isNodeOnline(n.nodeId)" @click.stop="approveNode(n.nodeId)"
                       class="sidebar-btn text-yellow-400 hover:text-yellow-300" title="Approve node">✓</button>
               <div class="relative">
-                <button @click.stop="openMenu($el, n.nodeId, 'node')" title="Add"
-                        class="sidebar-btn">+</button>
+                <button @click.stop="openMenu($el, n.nodeId, 'node')" title="Options"
+                        class="sidebar-btn">…</button>
               </div>
             </div>
             <!-- CWD groups -->
@@ -107,8 +108,10 @@
                                :style="!isNodeOnline(n.nodeId) ? 'opacity:0.5' : ''">
                             <span class="w-2 h-2 rounded-full flex-shrink-0" :class="activeSet.has(s.sessionId) ? 'bg-green-400 animate-pulse' : 'bg-gray-600'"></span>
                             <span class="text-sm truncate flex-1" x-text="s.name || s.sessionId.slice(0, 8)"></span>
-                            <button @click.stop="emit('session-remove', s.sessionId)"
-                                    class="sidebar-btn sidebar-btn-danger opacity-0 group-hover:opacity-100">x</button>
+                            <div class="relative">
+                              <button @click.stop="openMenu($el, s.sessionId, 'agent')"
+                                      class="sidebar-btn opacity-0 group-hover:opacity-100">…</button>
+                            </div>
                           </div>
                         </template>
                         <div x-show="g.sessions.length === 0" class="pl-10 pr-3 py-1 text-gray-600 text-xs">No agents</div>
@@ -129,7 +132,7 @@
          role="separator" aria-orientation="vertical" aria-label="Resize sidebar"
          class="w-1 bg-gray-800 hover:bg-gray-700 active:bg-gray-700 cursor-col-resize flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"></div>
 
-    <!-- Fixed dropdown: node + menu -->
+    <!-- Fixed dropdown: node ... menu -->
     <template x-if="nodeMenu">
       <div @click.outside="nodeMenu = null"
            class="fixed bg-gray-800 border border-gray-700 rounded shadow-lg py-1 z-50 min-w-[7rem]"
@@ -139,9 +142,19 @@
         <button @click.stop="openFolderPopup(nodeMenu)"
                 class="w-full text-left px-3 py-1 text-xs text-gray-300 hover:bg-gray-700">Add Folder</button>
         <template x-if="panelMode && nodeMenu !== '(local)'">
-          <button @click.stop="removeNode(nodeMenu); nodeMenu = null"
+          <button @click.stop="confirmRemove('Remove node?', nodeMenu, 'node'); nodeMenu = null"
                   class="w-full text-left px-3 py-1 text-xs text-red-400 hover:bg-gray-700">Remove</button>
         </template>
+      </div>
+    </template>
+
+    <!-- Fixed dropdown: agent ... menu -->
+    <template x-if="agentMenu">
+      <div @click.outside="agentMenu = null"
+           class="fixed bg-gray-800 border border-gray-700 rounded shadow-lg py-1 z-50 min-w-[7rem]"
+           :style="`top:${menuPos.top}px; left:${menuPos.left}px`">
+        <button @click.stop="confirmRemove('Remove from sidebar? Session data is preserved and can be reloaded.', agentMenu, 'agent'); agentMenu = null"
+                class="w-full text-left px-3 py-1 text-xs text-red-400 hover:bg-gray-700">Remove</button>
       </div>
     </template>
 
@@ -159,7 +172,19 @@
       </div>
     </template>
 
-    <!-- ═══ Add Agent Dialog ═══ -->
+    <!-- Confirm dialog -->
+    <template x-if="confirmDialog">
+      <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50" @keydown.escape.window="confirmDialog = null">
+        <div class="bg-gray-900 border border-gray-700 rounded-lg w-72 p-4 space-y-4">
+          <div class="text-sm text-gray-200" x-text="confirmDialog.message"></div>
+          <div class="flex gap-2">
+            <button @click="confirmDialog = null" class="flex-1 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-sm">Cancel</button>
+            <button @click="confirmDialog.type === 'agent' ? emit('session-remove', confirmDialog.id) : removeNode(confirmDialog.id); confirmDialog = null"
+                    class="flex-1 px-3 py-1.5 bg-red-700 hover:bg-red-600 rounded text-sm">Remove</button>
+          </div>
+        </div>
+      </div>
+    </template>
     <template x-if="agentDialog">
       <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50" @click.self="agentDialog = null" @keydown.escape.window="agentDialog = null">
         <div class="bg-gray-900 border border-gray-700 rounded-lg flex overflow-hidden" style="max-height:80vh"
@@ -188,7 +213,7 @@
               <div class="flex gap-2">
                 <div class="flex-1" x-show="panelMode">
                   <label class="text-xs text-gray-400 block mb-1">Node</label>
-                  <select x-model="agentDialog.nodeId" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-xs outline-none">
+                  <select x-model="agentDialog.nodeId" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm outline-none">
                     <option value="(local)">(local)</option>
                     <template x-for="n in nodes" :key="n.nodeId">
                       <option :value="n.nodeId" x-text="n.label || n.nodeId"></option>

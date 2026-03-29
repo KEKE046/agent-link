@@ -233,6 +233,22 @@ function app() {
       }
     },
 
+    async removeNodeManaged(nodeId) {
+      // Remove all managed sessions and folders belonging to a deleted node
+      const toDelete = this.managed.filter(s => (s.nodeId || '') === nodeId);
+      await Promise.all(toDelete.map(s =>
+        fetch(`/api/managed/${encodeURIComponent(s.sessionId)}`, { method: 'DELETE' }).catch(() => {})
+      ));
+      this.managed = this.managed.filter(s => (s.nodeId || '') !== nodeId);
+      this.managedFolders = this.managedFolders.filter(f => (f.nodeId || '') !== nodeId);
+      if (this.currentId && toDelete.some(s => s.sessionId === this.currentId)) {
+        this.currentId = null;
+        this.msg('clear');
+        if (this.eventSource) this.eventSource.close();
+      }
+      this.refreshData();
+    },
+
     async addFolder(detail) {
       const { cwd, nodeId } = detail;
       if (this.managedFolders.some(f => f.cwd === cwd && (f.nodeId || '') === (nodeId || ''))) return;
