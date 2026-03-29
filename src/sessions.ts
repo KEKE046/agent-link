@@ -1,4 +1,5 @@
 import { getClaudeSdk, type Query } from "./claude-sdk";
+import type { ClaudeParams } from "./managed";
 
 type Listener = (msg: any) => void;
 
@@ -6,6 +7,24 @@ interface ActiveSession {
   query: Query;
   cwd: string;
   model: string;
+}
+
+// Keys from ClaudeParams that map to SDK query options (vs settings)
+const OPTION_KEYS = new Set([
+  'model', 'systemPrompt', 'thinking', 'effort', 'maxTurns', 'maxBudgetUsd',
+  'permissionMode', 'allowedTools', 'disallowedTools', 'env', 'tools',
+]);
+
+function splitClaudeParams(params?: ClaudeParams): { options: Record<string, any>; settings: Record<string, any> } {
+  const options: Record<string, any> = {};
+  const settings: Record<string, any> = {};
+  if (!params) return { options, settings };
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined) continue;
+    if (OPTION_KEYS.has(k)) options[k] = v;
+    else settings[k] = v;
+  }
+  return { options, settings };
 }
 
 const active = new Map<string, ActiveSession>();
@@ -42,15 +61,25 @@ export function subscribe(
 
 export async function startQuery(
   prompt: string,
-  opts: { sessionId?: string; cwd: string; model: string }
+  opts: { sessionId?: string; cwd: string; model: string; claudeParams?: ClaudeParams }
 ): Promise<string> {
+  const { options: extraOptions, settings: extraSettings } = splitClaudeParams(opts.claudeParams);
+
   const queryOpts: Record<string, any> = {
     permissionMode: "bypassPermissions",
     allowDangerouslySkipPermissions: true,
     includePartialMessages: true,
-    model: opts.model,
     cwd: opts.cwd,
+    ...extraOptions,
   };
+  // Only set model if explicitly specified
+  const model = extraOptions.model || opts.model;
+  if (model) queryOpts.model = model;
+
+  // Apply settings via the settings option
+  if (Object.keys(extraSettings).length > 0) {
+    queryOpts.settings = extraSettings;
+  }
 
   if (opts.sessionId) {
     queryOpts.resume = opts.sessionId;

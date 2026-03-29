@@ -10,7 +10,7 @@ function app() {
     currentId: null,
     inputText: '',
     cwd: localStorage.getItem('agent-link:cwd') || '',
-    model: localStorage.getItem('agent-link:model') || 'claude-sonnet-4.6-rt',
+    model: localStorage.getItem('agent-link:model') || '',
     activeSet: new Set(),
     eventSource: null,
     seenUuids: new Set(),
@@ -31,9 +31,6 @@ function app() {
     panelMode: false,
     nodes: [],
     selectedNodeId: localStorage.getItem('agent-link:nodeId') || '',
-
-    // Pending new session placeholder (shown in sidebar with yellow dot)
-    pendingNew: null,  // {cwd, nodeId} or null
 
     // Auth state
     authRequired: false,
@@ -115,16 +112,14 @@ function app() {
         const res = await fetch('/api/managed');
         if (res.ok) {
           this.managed = ((await res.json()) || []).map(item => ({
-            sessionId: item.id, cwd: item.cwd, model: item.model || '',
-            label: item.label || item.id?.slice(0, 12) || '',
-            nodeId: item.nodeId, createdAt: item.createdAt,
+            sessionId: item.id, name: item.name || item.id?.slice(0, 12) || '',
+            cwd: item.cwd, nodeId: item.nodeId, createdAt: item.createdAt,
+            params: item.params || {},
           }));
           return;
         }
       } catch {}
-      this.managed = JSON.parse(localStorage.getItem('agent-link:managed') || '[]');
-      for (const s of this.managed) await this.saveManagedItem(s);
-      localStorage.removeItem('agent-link:managed');
+      this.managed = [];
     },
 
     async loadFolders() {
@@ -152,12 +147,16 @@ function app() {
       try {
         await fetch('/api/managed', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: item.sessionId, cwd: item.cwd || '', nodeId: item.nodeId, createdAt: item.createdAt || Date.now() }),
+          body: JSON.stringify({
+            id: item.sessionId, name: item.name, cwd: item.cwd || '',
+            nodeId: item.nodeId, createdAt: item.createdAt || Date.now(),
+            params: item.params || {},
+          }),
         });
       } catch {}
     },
 
-    // --- Event handlers (called from @event.window on the app div) ---
+    // --- Event handlers ---
 
     newSession() {
       this.currentId = null;
@@ -168,13 +167,54 @@ function app() {
       this.$nextTick(() => this.$el.querySelector('input[x-model="inputText"]')?.focus());
     },
 
-    createSession(detail) {
-      if (detail.cwd) this.cwd = detail.cwd;
-      if (detail.nodeId) this.selectedNodeId = detail.nodeId;
-      // Ensure the folder is tracked so it appears in sidebar
-      if (detail.cwd) this.addFolder({ cwd: detail.cwd, nodeId: detail.nodeId });
-      this.pendingNew = { cwd: detail.cwd || this.cwd, nodeId: detail.nodeId };
+    // Called from the add-agent dialog with full agent info
+    async createAgent(detail) {
+      const { name, cwd, nodeId, params, initialPrompt, loadSessionId } = detail;
+      if (!name) return;
+
+      // Ensure folder is tracked
+      if (cwd) this.addFolder({ cwd, nodeId });
+
+      if (loadSessionId) {
+        // Load existing session as agent
+        const entry = { sessionId: loadSessionId, name, cwd, nodeId, params: params || {} };
+        this.addManaged(entry);
+        this.switchSession(loadSessionId);
+        return;
+      }
+
+      // Create new session with initial prompt
+      const prompt = initialPrompt?.trim() || 'hello';
+      this.cwd = cwd || this.cwd;
+      if (nodeId) this.selectedNodeId = nodeId;
+
       this.newSession();
+      this.msg('append', { type: 'user', message: { content: [{ type: 'text', text: prompt }] } });
+
+      const claudeParams = params?.claude || undefined;
+      try {
+        const body = {
+          prompt, cwd: cwd || this.cwd,
+          model: claudeParams?.model || this.model,
+          nodeId: nodeId || (this.panelMode ? this.selectedNodeId : undefined),
+          claudeParams,
+        };
+        const res = await fetch('/api/query', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (data.error) { this.msg('append', { type: 'error', error: data.error }); return; }
+
+        this.currentId = data.sessionId;
+        const entry = { sessionId: data.sessionId, name, cwd: cwd || this.cwd, nodeId, params: params || {} };
+        this.addManaged(entry);
+        this.activeSet.add(this.currentId);
+        this.syncActive();
+        this.connectSSE(this.currentId);
+      } catch (err) {
+        this.msg('append', { type: 'error', error: err.message });
+      }
     },
 
     addManaged(entry) {
@@ -208,7 +248,6 @@ function app() {
     async removeFolder(detail) {
       const { cwd, nodeId } = detail;
       const nid = nodeId || '';
-      // Remove folder from managedFolders
       this.managedFolders = this.managedFolders.filter(f => !(f.cwd === cwd && (f.nodeId || '') === nid));
       try {
         await fetch('/api/managed-folders', {
@@ -216,7 +255,6 @@ function app() {
           body: JSON.stringify({ cwd, nodeId }),
         });
       } catch {}
-      // Also remove all managed sessions under this folder
       const toRemove = this.managed.filter(s => s.cwd === cwd && (s.nodeId || '') === nid);
       for (const s of toRemove) this.removeManaged(s.sessionId);
     },
@@ -237,7 +275,6 @@ function app() {
 
     async switchSession(id) {
       if (this.currentId === id) return;
-      this.pendingNew = null;
       this.currentId = id;
       this.msg('clear');
       this.seenUuids = new Set();
@@ -246,7 +283,6 @@ function app() {
       const s = this.managed.find(s => s.sessionId === id);
       if (s) {
         this.cwd = s.cwd || this.cwd;
-        if (s.model) this.model = s.model;
         if (s.nodeId) this.selectedNodeId = s.nodeId;
       }
 
@@ -264,23 +300,21 @@ function app() {
     },
 
     async send() {
-      if (!this.inputText.trim()) return;
+      if (!this.inputText.trim() || !this.currentId) return;
       const prompt = this.inputText.trim();
       this.inputText = '';
       this.msg('append', { type: 'user', message: { content: [{ type: 'text', text: prompt }] } });
 
-      const nodeId = this.panelMode ? this.selectedNodeId : undefined;
-      const isNew = !this.currentId;
+      const s = this.managed.find(s => s.sessionId === this.currentId);
+      const claudeParams = s?.params?.claude || undefined;
       try {
-        const body = { prompt, cwd: this.cwd, model: this.model };
-        if (!isNew) body.sessionId = this.currentId;
-        if (isNew && nodeId) body.nodeId = nodeId;
-        if (!isNew) {
-          const s = this.managed.find(s => s.sessionId === this.currentId);
-          if (s?.cwd) body.cwd = s.cwd;
-          if (s?.model) body.model = s.model;
-          if (s?.nodeId) body.nodeId = s.nodeId;
-        }
+        const body = {
+          prompt, sessionId: this.currentId,
+          cwd: s?.cwd || this.cwd,
+          model: claudeParams?.model || this.model,
+          nodeId: s?.nodeId || (this.panelMode ? this.selectedNodeId : undefined),
+          claudeParams,
+        };
         const res = await fetch('/api/query', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
@@ -288,13 +322,6 @@ function app() {
         const data = await res.json();
         if (data.error) { this.msg('append', { type: 'error', error: data.error }); return; }
 
-        if (isNew) {
-          this.currentId = data.sessionId;
-          this.pendingNew = null;
-          const entry = { sessionId: data.sessionId, cwd: this.cwd, model: this.model, label: prompt.slice(0, 40) };
-          if (nodeId) entry.nodeId = nodeId;
-          this.addManaged(entry);
-        }
         this.activeSet.add(this.currentId);
         this.syncActive();
         this.connectSSE(this.currentId);
@@ -314,12 +341,18 @@ function app() {
     async changeModel() {
       if (!this.currentId) return;
       const s = this.managed.find(s => s.sessionId === this.currentId);
-      if (s) { s.model = this.model; this.saveManagedItem(s); }
       try {
         const headers = { 'Content-Type': 'application/json' };
         if (this.panelMode && s?.nodeId) headers['x-node-id'] = s.nodeId;
         await fetch(`/api/model/${this.currentId}`, { method: 'POST', headers, body: JSON.stringify({ model: this.model }) });
       } catch {}
+    },
+
+    // --- Config events from right sidebar ---
+
+    onConfigSave(detail) {
+      const s = this.managed.find(s => s.sessionId === detail.sessionId);
+      if (s) s.params = detail.params;
     },
 
     connectSSE(id) {
