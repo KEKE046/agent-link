@@ -1,5 +1,5 @@
 // Sidebar component — nested inside app(), inherits parent scope for reading:
-//   managed, managedFolders, nodes, currentId, activeSet, panelMode, cwd, sidebarWidth, sidebarCollapsed, clampWidth
+//   managed, managedFolders, nodes, currentId, activeSet, cwd, sidebarWidth, sidebarCollapsed, clampWidth
 // Communicates outward via emit():
 //   session-switch, session-remove, agent-create, folder-add, folder-remove, folder-rename, data-refresh
 
@@ -8,6 +8,7 @@ function sidebar() {
     expandedGroups: new Set(),
     folderMenu: null,
     renamePopup: null,  // {cwd, nodeId, label}
+    nodeRenamePopup: null,  // {nodeId, label}
     nodeMenu: null,     // nodeId or null
     agentMenu: null,    // sessionId or null
     confirmDialog: null, // {message, onConfirm}
@@ -23,12 +24,13 @@ function sidebar() {
     agentDialog: null,  // {nodeId, cwd, tab:'new'|'load', name, initialPrompt, configOpen, ...browseState}
 
     init() {
-      if (!this.panelMode) this.expandGroup('node:(local)');
+      this.$watch('localId', (id) => { if (id) this.expandGroup('node:' + id); });
       this.$watch('currentId', (id) => {
         if (!id) return;
         const s = this.managed.find(s => s.sessionId === id);
         if (!s) return;
-        const nid = s.nodeId || '(local)';
+        const nid = s.nodeId;
+        if (!nid) return;
         this.expandGroup('node:' + nid);
         this.expandGroup(nid + ':' + (s.cwd || this.cwd));
       });
@@ -66,20 +68,20 @@ function sidebar() {
 
     get groupedSessions() {
       const nodeMap = new Map();
-      if (!this.panelMode) {
-        nodeMap.set('(local)', { nodeId: '(local)', label: '(local)', approved: true, cwdGroups: [] });
-      }
       for (const n of this.nodes) {
-        nodeMap.set(n.nodeId, { nodeId: n.nodeId, label: n.label, approved: n.approved, cwdGroups: [] });
+        const label = n.nodeId === this.localId ? (this.localLabel || n.label) : n.label;
+        nodeMap.set(n.nodeId, { nodeId: n.nodeId, label, approved: n.approved, cwdGroups: [] });
       }
       const cwdMap = new Map();
       for (const f of this.managedFolders) {
-        const nid = f.nodeId || '(local)';
+        const nid = f.nodeId;
+        if (!nid) continue;
         const key = nid + ':' + f.cwd;
         if (!cwdMap.has(key)) cwdMap.set(key, { nodeId: nid, cwd: f.cwd, label: f.label || '', sessions: [], isFolder: true });
       }
       for (const s of this.managed) {
-        const nid = s.nodeId || '(local)';
+        const nid = s.nodeId;
+        if (!nid) continue;
         const key = nid + ':' + (s.cwd || '(unknown)');
         if (!cwdMap.has(key)) cwdMap.set(key, { nodeId: nid, cwd: s.cwd || '(unknown)', label: this.getFolderLabel(s.cwd, nid), sessions: [] });
         cwdMap.get(key).sessions.push(s);
@@ -132,7 +134,7 @@ function sidebar() {
     // --- Node ---
 
     isNodeOnline(nodeId) {
-      if (nodeId === '(local)') return true;
+      if (nodeId === this.localId) return true;
       return this.nodes.find(n => n.nodeId === nodeId)?.online ?? false;
     },
 
@@ -153,8 +155,7 @@ function sidebar() {
     // --- Folder management ---
 
     isManagedFolder(cwd, nodeId) {
-      const nid = (!nodeId || nodeId === '(local)') ? '' : nodeId;
-      return this.managedFolders.some(f => f.cwd === cwd && (f.nodeId || '') === nid);
+      return this.managedFolders.some(f => f.cwd === cwd && f.nodeId === nodeId);
     },
 
     isSessionManaged(sessionId) {
@@ -162,8 +163,7 @@ function sidebar() {
     },
 
     getFolderLabel(cwd, nodeId) {
-      const nid = (!nodeId || nodeId === '(local)') ? '' : nodeId;
-      const f = this.managedFolders.find(f => f.cwd === cwd && (f.nodeId || '') === nid);
+      const f = this.managedFolders.find(f => f.cwd === cwd && f.nodeId === nodeId);
       return f?.label || '';
     },
 
@@ -175,15 +175,30 @@ function sidebar() {
     submitRename() {
       if (!this.renamePopup) return;
       const { cwd, nodeId, label } = this.renamePopup;
-      emit('folder-rename', { cwd, nodeId: nodeId === '(local)' ? undefined : nodeId, label: label.trim() });
+      emit('folder-rename', { cwd, nodeId, label: label.trim() });
       this.renamePopup = null;
+    },
+
+    // --- Node rename ---
+
+    openNodeRenamePopup(nodeId, label) {
+      this.nodeMenu = null;
+      this.nodeRenamePopup = { nodeId, label };
+      this.$nextTick(() => document.querySelector('#node-rename-input')?.focus());
+    },
+
+    async submitNodeRename() {
+      if (!this.nodeRenamePopup) return;
+      const { nodeId, label } = this.nodeRenamePopup;
+      if (label.trim()) await this.renameNode(nodeId, label.trim());
+      this.nodeRenamePopup = null;
     },
 
     // --- Add-folder popup ---
 
     openFolderPopup(nodeId) {
       this.nodeMenu = null;
-      this.folderPopup = { nodeId: nodeId || '(local)', cwd: '', folders: [], loading: true };
+      this.folderPopup = { nodeId: nodeId || this.localId, cwd: '', folders: [], loading: true };
       this.$nextTick(() => document.querySelector('#folder-cwd-input')?.focus());
       this.fetchFolderList();
     },
@@ -196,7 +211,7 @@ function sidebar() {
         for (const s of (data || [])) { if (s.cwd) cwdSet.add(s.cwd); }
         // Exclude already-managed folders for this node
         const nid = this.folderPopup.nodeId;
-        const managed = new Set(this.managedFolders.filter(f => (f.nodeId || '(local)') === nid).map(f => f.cwd));
+        const managed = new Set(this.managedFolders.filter(f => f.nodeId === nid).map(f => f.cwd));
         this.folderPopup.folders = [...cwdSet].filter(c => !managed.has(c)).sort();
       } catch { this.folderPopup.folders = []; }
       this.folderPopup.loading = false;
@@ -204,7 +219,7 @@ function sidebar() {
 
     submitFolderPopup() {
       if (!this.folderPopup || !this.folderPopup.cwd.trim()) return;
-      const nodeId = this.folderPopup.nodeId === '(local)' ? undefined : this.folderPopup.nodeId;
+      const nodeId = this.folderPopup.nodeId;
       emit('folder-add', { cwd: this.folderPopup.cwd.trim(), nodeId });
       this.folderPopup = null;
     },
@@ -219,7 +234,7 @@ function sidebar() {
       const sysPrompt = this.generateDefaultSystemPrompt('', '');
       const initPrompt = this.generateDefaultInitialPrompt();
       this.agentDialog = {
-        nodeId: nodeId || '(local)',
+        nodeId: nodeId || this.localId,
         cwd: cwd || this.cwd,
         tab: 'new',
         name: '',
@@ -386,7 +401,7 @@ function sidebar() {
       if (!d || !d.name.trim()) return;
 
       const params = { claude: this.buildDialogParams() };
-      const nodeId = d.nodeId === '(local)' ? undefined : d.nodeId;
+      const nodeId = d.nodeId;
 
       if (d.tab === 'load' && d.browseSelected) {
         emit('agent-create', {

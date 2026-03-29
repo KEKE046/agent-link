@@ -159,7 +159,7 @@ if (connectTo) {
     initAuth(tokenArg);
     logger.log("node", `Local API token saved to store`);
   }
-  const localApp = createApp(localRouter);
+  const localApp = createApp(localRouter, label);
 
   let relayHandlers: ReturnType<typeof import("./node/relay")["createRelayHandlers"]> | null = null;
   if (acceptNodes) {
@@ -218,7 +218,7 @@ if (connectTo) {
     });
   }
 
-  const app = createApp(router);
+  const app = createApp(router, localId || "");
 
   const mode = noLocal ? "router-only" : acceptNodes ? "local + remote" : "standalone";
   logger.log("server", `Mode: ${mode}`);

@@ -191,7 +191,9 @@
                 class="w-full text-left px-3 py-1 text-xs text-gray-300 hover:bg-gray-700">Add Agent</button>
         <button @click.stop="openFolderPopup(nodeMenu)"
                 class="w-full text-left px-3 py-1 text-xs text-gray-300 hover:bg-gray-700">Add Folder</button>
-        <template x-if="panelMode && nodeMenu !== '(local)'">
+        <button @click.stop="openNodeRenamePopup(nodeMenu, nodeMenu === localId ? (localLabel || '') : (nodes.find(n => n.nodeId === nodeMenu)?.label || ''))"
+                class="w-full text-left px-3 py-1 text-xs text-gray-300 hover:bg-gray-700">Rename</button>
+        <template x-if="nodeMenu !== localId">
           <button @click.stop="confirmRemove('Remove node?', nodeMenu, 'node'); nodeMenu = null"
                   class="w-full text-left px-3 py-1 text-xs text-red-400 hover:bg-gray-700">Remove</button>
         </template>
@@ -217,7 +219,7 @@
                 class="w-full text-left px-3 py-1 text-xs text-gray-300 hover:bg-gray-700">Add Agent</button>
         <button @click.stop="openRenamePopup(folderMenu.split(':').slice(1).join(':'), folderMenu.split(':')[0]); folderMenu = null"
                 class="w-full text-left px-3 py-1 text-xs text-gray-300 hover:bg-gray-700">Rename</button>
-        <button @click.stop="emit('folder-remove', {cwd: folderMenu.split(':').slice(1).join(':'), nodeId: folderMenu.split(':')[0] === '(local)' ? undefined : folderMenu.split(':')[0]}); folderMenu = null"
+        <button @click.stop="emit('folder-remove', {cwd: folderMenu.split(':').slice(1).join(':'), nodeId: folderMenu.split(':')[0]}); folderMenu = null"
                 class="w-full text-left px-3 py-1 text-xs text-gray-300 hover:bg-gray-700">Remove</button>
       </div>
     </template>
@@ -266,10 +268,10 @@
 
               <!-- Node / CWD -->
               <div class="flex gap-2">
-                <div class="flex-1" x-show="panelMode">
+                <div class="flex-1" x-show="nodes.length > 1">
                   <label class="text-xs text-gray-400 block mb-1">Node</label>
                   <select x-model="agentDialog.nodeId" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm outline-none">
-                    <option value="(local)">(local)</option>
+                    <option :value="localId" x-text="localLabel || localId"></option>
                     <template x-for="n in nodes" :key="n.nodeId">
                       <option :value="n.nodeId" x-text="n.label || n.nodeId"></option>
                     </template>
@@ -435,6 +437,21 @@
           <div class="flex gap-2">
             <button @click="renamePopup = null" class="flex-1 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-sm">Cancel</button>
             <button @click="submitRename()" class="flex-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-sm">Save</button>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- Node rename popup -->
+    <template x-if="nodeRenamePopup">
+      <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50" @click.self="nodeRenamePopup = null" @keydown.escape.window="nodeRenamePopup = null">
+        <div class="bg-gray-900 border border-gray-700 rounded-lg w-80 p-4 space-y-3">
+          <div class="text-xs text-gray-400">Rename node</div>
+          <input id="node-rename-input" x-model="nodeRenamePopup.label" @keydown.enter.prevent="submitNodeRename()" placeholder="Node display name"
+                 class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm mono outline-none focus:border-gray-500" />
+          <div class="flex gap-2">
+            <button @click="nodeRenamePopup = null" class="flex-1 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-sm">Cancel</button>
+            <button @click="submitNodeRename()" class="flex-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-sm">Save</button>
           </div>
         </div>
       </div>

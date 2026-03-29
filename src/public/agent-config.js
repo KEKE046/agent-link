@@ -1,5 +1,5 @@
 // Right sidebar: agent configuration panel
-// Reads from parent scope: managed, currentId, activeSet, panelMode
+// Reads from parent scope: managed, currentId, activeSet
 // Emits: config-save, config-compact, config-reload
 
 function agentConfig() {

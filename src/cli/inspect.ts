@@ -53,14 +53,21 @@ export async function runInspect(args: string[]) {
     process.exit(1);
   }
 
-  const [managed, active] = await Promise.all([
+  const [managed, active, nodes] = await Promise.all([
     apiFetchOpt(url, "/api/managed"),
     apiFetchOpt(url, "/api/active"),
+    apiFetchOpt(url, "/api/nodes"),
   ]);
 
   if (!managed) {
     console.error("Error: could not connect to server");
     process.exit(1);
+  }
+
+  // Build nodeId → label map
+  const labelMap = new Map<string, string>();
+  if (Array.isArray(nodes)) {
+    for (const n of nodes) labelMap.set(n.nodeId, n.label || n.nodeId);
   }
 
   const activeSet = new Set<string>(Array.isArray(active) ? active : []);
@@ -81,7 +88,7 @@ export async function runInspect(args: string[]) {
       for (const line of agent.intro.split("\n")) console.log(`           ${line}`);
     }
     console.log(`Session:   ${agent.id}`);
-    console.log(`Node:      ${agent.nodeId || "(local)"}`);
+    console.log(`Node:      ${labelMap.get(agent.nodeId) || agent.nodeId || "?"}`);
     console.log(`CWD:       ${agent.cwd}`);
     console.log(`Active:    ${activeSet.has(agent.id) ? "yes" : "no"}`);
     console.log(`Created:   ${new Date(agent.createdAt).toLocaleString()}`);

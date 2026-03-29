@@ -1,5 +1,5 @@
 // VSCode modal component — listens for vscode-open event, emits data-refresh
-// Reads from parent scope: panelMode, vscodeActive
+// Reads from parent scope: vscodeActive
 
 function vscodeUi() {
   return {
@@ -19,10 +19,10 @@ function vscodeUi() {
     },
 
     vscodeUrl(cwd, nodeId) {
-      const key = (this.panelMode && nodeId) ? (nodeId + ':' + cwd) : cwd;
+      const key = nodeId ? (nodeId + ':' + cwd) : cwd;
       const item = this.vscodeActive[key];
       if (!item?.id) return '#';
-      return this.panelMode && item.nodeId ? `/vscode/${item.nodeId}/${item.id}/` : `/vscode/${item.id}/`;
+      return item.nodeId ? `/vscode/${item.nodeId}/${item.id}/` : `/vscode/${item.id}/`;
     },
 
     async open({ cwd, nodeId }) {
