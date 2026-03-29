@@ -1,22 +1,13 @@
 import type { PanelToNode, NodeToPanel } from "../protocol";
+import { dispatch } from "../dispatch";
 import * as sessions from "../sessions";
-import {
-  listInstalledVersions,
-  startVscodeServer,
-  stopVscodeServer,
-  listActiveServers,
-  getInstallCommand,
-} from "../vscode";
+import { listActiveServers } from "../vscode";
 import { handleTunnelRequest, handleTunnelWsOpen, handleTunnelWsData, handleTunnelWsClose } from "./tunnel";
 
 let ws: WebSocket | null = null;
-let nodeId: string | null = null;
 let reconnectDelay = 1000;
 let heartbeatTimer: Timer | null = null;
 let eventForwardingTimer: Timer | null = null;
-let connected = false;
-
-const label = Bun.env.NODE_LABEL || `node-${Math.random().toString(36).slice(2, 8)}`;
 
 export function send(msg: NodeToPanel) {
   if (ws?.readyState === WebSocket.OPEN) {
@@ -31,10 +22,7 @@ function scheduleHeartbeat() {
       type: "heartbeat",
       activeSessionIds: sessions.getActiveIds(),
       vscodeServers: listActiveServers().map((s) => ({
-        cwd: s.cwd,
-        id: s.id,
-        commit: s.commit,
-        port: s.port,
+        cwd: s.cwd, id: s.id, commit: s.commit, port: s.port,
       })),
     });
   }, 10000);
@@ -42,67 +30,7 @@ function scheduleHeartbeat() {
 
 async function handleRequest(msg: { requestId: string; action: string; params: any }) {
   try {
-    let data: any;
-    switch (msg.action) {
-      case "query": {
-        const { prompt, cwd, model, sessionId } = msg.params;
-        const id = await sessions.startQuery(prompt, { sessionId, cwd, model });
-        data = { sessionId: id };
-        break;
-      }
-      case "interrupt": {
-        await sessions.interrupt(msg.params.sessionId);
-        data = { ok: true };
-        break;
-      }
-      case "setModel": {
-        await sessions.setModel(msg.params.sessionId, msg.params.model);
-        data = { ok: true };
-        break;
-      }
-      case "listSessions": {
-        data = await sessions.listSessions(
-          msg.params.cwd,
-          msg.params.limit || 50,
-          msg.params.offset || 0
-        );
-        break;
-      }
-      case "getSessionInfo": {
-        data = await sessions.getSessionInfo(
-          msg.params.sessionId,
-          msg.params.cwd
-        );
-        break;
-      }
-      case "getSessionMessages": {
-        data = await sessions.getSessionMessages(
-          msg.params.sessionId,
-          msg.params.cwd,
-          msg.params.limit || 200,
-          msg.params.offset || 0
-        );
-        break;
-      }
-      case "listVscodeVersions": {
-        data = await listInstalledVersions();
-        break;
-      }
-      case "startVscodeServer": {
-        data = await startVscodeServer(msg.params.cwd, msg.params.commit);
-        break;
-      }
-      case "stopVscodeServer": {
-        data = { ok: await stopVscodeServer(msg.params.cwd) };
-        break;
-      }
-      case "getInstallCommand": {
-        data = getInstallCommand(msg.params.version);
-        break;
-      }
-      default:
-        throw new Error(`Unknown action: ${msg.action}`);
-    }
+    const data = await dispatch(msg.action, msg.params);
     send({ type: "response", requestId: msg.requestId, data });
   } catch (err: any) {
     send({ type: "error", requestId: msg.requestId, error: err.message });
@@ -111,16 +39,11 @@ async function handleRequest(msg: { requestId: string; action: string; params: a
 
 function handleMessage(raw: string) {
   let msg: PanelToNode;
-  try {
-    msg = JSON.parse(raw);
-  } catch {
-    return;
-  }
+  try { msg = JSON.parse(raw); } catch { return; }
 
   switch (msg.type) {
     case "registered":
-      nodeId = msg.nodeId;
-      console.log(`[node] Registered as ${nodeId}`);
+      console.log(`[node] Registered as ${msg.nodeId}`);
       break;
     case "pending":
       console.log("[node] Waiting for approval from panel...");
@@ -129,7 +52,6 @@ function handleMessage(raw: string) {
       handleRequest(msg);
       break;
     case "ping":
-      // No-op, keeps connection alive
       break;
     case "tunnel:request":
       handleTunnelRequest(msg);
@@ -146,19 +68,13 @@ function handleMessage(raw: string) {
   }
 }
 
-// Set up session event forwarding: subscribe to all active sessions
-// and forward events through the WS
-const forwarded = new Map<string, () => void>(); // sessionId → unsub
+// Session event forwarding: subscribe to active sessions and relay to panel
+const forwarded = new Map<string, () => void>();
 
 function setupEventForwarding() {
-  // Clean up previous timer if reconnecting
   if (eventForwardingTimer) clearInterval(eventForwardingTimer);
-
-  // Check for new active sessions periodically and subscribe
   eventForwardingTimer = setInterval(() => {
     const activeIds = new Set(sessions.getActiveIds());
-
-    // Subscribe to new sessions
     for (const id of activeIds) {
       if (forwarded.has(id)) continue;
       try {
@@ -168,34 +84,22 @@ function setupEventForwarding() {
         forwarded.set(id, unsub);
       } catch {}
     }
-
-    // Clean up ended sessions
     for (const [id, unsub] of forwarded) {
-      if (!activeIds.has(id)) {
-        unsub();
-        forwarded.delete(id);
-      }
+      if (!activeIds.has(id)) { unsub(); forwarded.delete(id); }
     }
   }, 500);
 }
 
-export function connect(panelUrl: string, key: string) {
+export function connect(panelUrl: string, machineId: string, label: string) {
   const wsUrl = panelUrl.replace(/^http/, "ws") + "/ws/node";
   console.log(`[node] Connecting to ${wsUrl}...`);
 
   ws = new WebSocket(wsUrl);
 
   ws.addEventListener("open", () => {
-    connected = true;
     reconnectDelay = 1000;
     console.log("[node] Connected to Panel");
-
-    send({
-      type: "register",
-      key,
-      label,
-    });
-
+    send({ type: "register", machineId, label });
     scheduleHeartbeat();
     setupEventForwarding();
   });
@@ -205,20 +109,16 @@ export function connect(panelUrl: string, key: string) {
   });
 
   ws.addEventListener("close", () => {
-    connected = false;
     if (heartbeatTimer) clearInterval(heartbeatTimer);
     if (eventForwardingTimer) clearInterval(eventForwardingTimer);
-    // Clean up all forwarding subscriptions
     for (const [, unsub] of forwarded) unsub();
     forwarded.clear();
     console.log(`[node] Disconnected. Reconnecting in ${reconnectDelay}ms...`);
     setTimeout(() => {
       reconnectDelay = Math.min(reconnectDelay * 2, 60000);
-      connect(panelUrl, key);
+      connect(panelUrl, machineId, label);
     }, reconnectDelay);
   });
 
-  ws.addEventListener("error", () => {
-    // close event will fire after this
-  });
+  ws.addEventListener("error", () => {});
 }

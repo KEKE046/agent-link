@@ -1,5 +1,26 @@
 # Agent Link - Changes
 
+## v0.9.0
+
+- Unified backend: single entry point `src/main.ts` replaces 3 separate entry points
+  - `agent-link` — standalone (local node + HTTP)
+  - `agent-link --accept-nodes` — local node + accept remote nodes via WebSocket
+  - `agent-link --accept-nodes --no-local` — pure router (no local SDK)
+  - `agent-link --connect-to <url>` — node only, connect to remote panel
+  - `--port <n>` and `--name <name>` options
+- API routes written once in `routes.ts`, dispatched via `Router` by nodeId
+  - `router.ts`: routes to local `dispatch()` or remote `requestNode()` based on nodeId
+  - `dispatch.ts`: shared action→function mapping for both router and node connector
+  - Eliminates ~900 lines of duplicate route code between standalone and panel
+- Machine ID: `hostname-xxxxxxxx` (8-char device hash from `/etc/machine-id`)
+  - Replaces random `node-key` file and `node_timestamp_random` IDs
+  - `identity.ts`: deterministic, human-readable, stable across restarts
+- `managed-folders` API now available in all modes (was missing from panel)
+- Node approve/label admin endpoints moved to unified routes
+- Single build target: one binary for all modes
+- Protocol: `MsgRegister.key` → `MsgRegister.machineId`
+- Deleted: `server.ts`, `panel/server.ts`, `node/main.ts`, `node/key.ts`
+
 ## v0.8.0
 
 - Replaced sidebar New/Load buttons with contextual "+" on node headers
