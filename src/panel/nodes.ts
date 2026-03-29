@@ -247,6 +247,19 @@ export function renameNode(nodeId: string, label: string): boolean {
   return true;
 }
 
+export function removeNode(nodeId: string): boolean {
+  const record = nodeRecords[nodeId];
+  if (!record) return false;
+  delete nodeRecords[nodeId];
+  persistNodeRecords();
+  const node = nodes.get(nodeId);
+  if (node) {
+    nodes.delete(nodeId);
+    if (node.ws.readyState !== WebSocket.CLOSED) node.ws.close();
+  }
+  return true;
+}
+
 export function markOffline(nodeId: string) {
   const node = nodes.get(nodeId);
   if (node) {

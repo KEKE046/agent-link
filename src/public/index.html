@@ -82,6 +82,8 @@
               <span class="truncate flex-1 font-semibold" x-text="n.label || n.nodeId"></span>
               <button x-show="n.approved === false && isNodeOnline(n.nodeId)" @click.stop="approveNode(n.nodeId)"
                       class="sidebar-btn text-yellow-400 hover:text-yellow-300" title="Approve node">✓</button>
+              <button x-show="panelMode && n.nodeId !== '(local)'" @click.stop="removeNode(n.nodeId)"
+                      class="sidebar-btn sidebar-btn-danger" title="Remove node">x</button>
               <button @click.stop="openAddModal(n.nodeId)" title="Add session or folder"
                       class="sidebar-btn">+</button>
             </div>

@@ -147,6 +147,13 @@ function sidebar() {
       } catch {}
     },
 
+    async removeNode(nodeId) {
+      try {
+        await fetch(`/api/nodes/${encodeURIComponent(nodeId)}`, { method: 'DELETE' });
+        emit('data-refresh');
+      } catch {}
+    },
+
     // --- Folder management ---
     isManagedFolder(cwd, nodeId) {
       const nid = (!nodeId || nodeId === '(local)') ? '' : nodeId;

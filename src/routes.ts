@@ -203,6 +203,12 @@ export function createApp(router: Router): Hono {
     return c.json({ ok: router.renameNode(nodeId, label) });
   });
 
+  app.delete("/api/nodes/:nodeId", (c) => {
+    if (!router.hasRemote) return c.notFound();
+    const nodeId = c.req.param("nodeId");
+    return c.json({ ok: router.removeNode(nodeId) });
+  });
+
   // --- Managed sessions ---
 
   app.get("/api/managed", (c) => c.json(listManaged()));

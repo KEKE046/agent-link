@@ -90,6 +90,7 @@ if (connectTo) {
       clearEventBuffer: panelNodes.clearEventBuffer,
       approveNode: panelNodes.approveNode,
       renameNode: panelNodes.renameNode,
+      removeNode: panelNodes.removeNode,
     });
   }
 
