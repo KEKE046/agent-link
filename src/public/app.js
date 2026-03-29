@@ -6,6 +6,7 @@ function emit(name, detail) {
 function app() {
   return {
     managed: [],
+    managedFolders: [],
     currentId: null,
     inputText: '',
     cwd: localStorage.getItem('agent-link:cwd') || '',
@@ -25,22 +26,19 @@ function app() {
       return v !== null ? v === 'true' : !window.matchMedia('(min-width: 768px)').matches;
     })(),
     theme: localStorage.getItem('agent-link:theme') === 'light' ? 'light' : 'dark',
-    vscodeActive: {},
 
     // Panel mode
     panelMode: false,
     nodes: [],
     selectedNodeId: localStorage.getItem('agent-link:nodeId') || '',
-    panelAdminSecret: '',
 
     init() {
       Alpine.store('active', false);
       if (!this.cwd) this.cwd = window.location.hostname === 'localhost' ? '.' : '/';
       this.applyTheme();
-      this.detectPanelMode().then(() => this.loadManaged());
+      this.detectPanelMode().then(() => { this.loadManaged(); this.loadFolders(); });
       this.refreshActive();
-      this.refreshVscodeActive();
-      setInterval(() => { this.refreshActive(); this.refreshVscodeActive(); if (this.panelMode) this.refreshNodes(); }, 5000);
+      setInterval(() => { this.refreshActive(); if (this.panelMode) this.refreshNodes(); }, 5000);
       this.$watch('cwd', (v) => localStorage.setItem('agent-link:cwd', v));
       this.$watch('model', (v) => localStorage.setItem('agent-link:model', v));
       this.$watch('sidebarCollapsed', (v) => localStorage.setItem('agent-link:sidebar-collapsed', String(v)));
@@ -86,22 +84,18 @@ function app() {
       localStorage.removeItem('agent-link:managed');
     },
 
+    async loadFolders() {
+      try {
+        const res = await fetch('/api/managed-folders');
+        if (res.ok) this.managedFolders = (await res.json()) || [];
+      } catch { this.managedFolders = []; }
+    },
+
     async refreshNodes() {
       try { const res = await fetch('/api/nodes'); if (res.ok) this.nodes = await res.json(); } catch {}
     },
     async refreshActive() {
       try { this.activeSet = new Set(await (await fetch('/api/active')).json()); this.syncActive(); } catch {}
-    },
-    async refreshVscodeActive() {
-      try {
-        const list = await (await fetch('/api/vscode/active')).json();
-        const map = {};
-        for (const item of list || []) {
-          if (item.nodeId) map[item.nodeId + ':' + item.cwd] = item;
-          else map[item.cwd] = item;
-        }
-        this.vscodeActive = map;
-      } catch {}
     },
 
     syncActive() {
@@ -131,6 +125,12 @@ function app() {
       this.$nextTick(() => this.$el.querySelector('input[x-model="inputText"]')?.focus());
     },
 
+    createSession(detail) {
+      if (detail.cwd) this.cwd = detail.cwd;
+      if (detail.nodeId) this.selectedNodeId = detail.nodeId;
+      this.newSession();
+    },
+
     addManaged(entry) {
       if (this.managed.find(s => s.sessionId === entry.sessionId)) return;
       this.managed.unshift(entry);
@@ -145,6 +145,29 @@ function app() {
         this.msg('clear');
         if (this.eventSource) this.eventSource.close();
       }
+    },
+
+    async addFolder(detail) {
+      const { cwd, nodeId } = detail;
+      if (this.managedFolders.some(f => f.cwd === cwd && (f.nodeId || '') === (nodeId || ''))) return;
+      this.managedFolders.push({ cwd, nodeId });
+      try {
+        await fetch('/api/managed-folders', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cwd, nodeId }),
+        });
+      } catch {}
+    },
+
+    async removeFolder(detail) {
+      const { cwd, nodeId } = detail;
+      this.managedFolders = this.managedFolders.filter(f => !(f.cwd === cwd && (f.nodeId || '') === (nodeId || '')));
+      try {
+        await fetch('/api/managed-folders', {
+          method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cwd, nodeId }),
+        });
+      } catch {}
     },
 
     async switchSession(id) {
@@ -278,7 +301,6 @@ function app() {
 
     refreshData() {
       this.refreshNodes();
-      this.refreshVscodeActive();
     },
   };
 }

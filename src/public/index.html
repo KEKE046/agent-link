@@ -3,16 +3,15 @@
   ═══════════════════════════════════════════════════
   index.html     本文件，HTML 骨架 + Alpine 模板
   app.js         核心状态、session 生命周期、SSE、send/switch/interrupt
-  sidebar.js     侧边栏：分组、展开折叠、Load 弹窗、节点管理
-  vscode-ui.js   VSCode 弹窗：启动/停止/安装
+  sidebar.js     侧边栏：分组、展开折叠、Add 弹窗（New/Browse）、节点管理
   renderer.js    消息渲染组件 + Alpine messages 组件
 
   组件通信：
     emit(name, detail) → window CustomEvent，所有组件统一用
-    sidebar/vscode → app:  session-switch, session-new, session-remove, session-add, data-refresh
-    sidebar → vscode:      vscode-open, vscode-stop
-    app → sidebar:         通过响应式状态 (currentId, managed, activeSet, nodes, vscodeActive)
-    sidebar 自动展开:       $watch('currentId')
+    sidebar → app:  session-switch, session-create, session-remove, session-add,
+                    folder-add, folder-remove, data-refresh
+    app → sidebar:  通过响应式状态 (currentId, managed, managedFolders, activeSet, nodes)
+    sidebar 自动展开:  $watch('currentId')
 
   样式：tailwind.input.css → styles.css (bunx @tailwindcss/cli 编译)
 
@@ -32,7 +31,6 @@
   <script src="/renderer.js"></script>
   <script src="/app.js"></script>
   <script src="/sidebar.js"></script>
-  <script src="/vscode-ui.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
 </head>
 <body class="bg-gray-950 text-gray-100 h-screen overflow-hidden">
@@ -40,8 +38,11 @@
 <div x-data="app()" x-cloak class="flex h-screen"
      @session-switch.window="switchSession($event.detail)"
      @session-new.window="newSession()"
+     @session-create.window="createSession($event.detail)"
      @session-remove.window="removeManaged($event.detail)"
      @session-add.window="addManaged($event.detail)"
+     @folder-add.window="addFolder($event.detail)"
+     @folder-remove.window="removeFolder($event.detail)"
      @data-refresh.window="refreshData()">
 
   <!-- Sidebar -->
@@ -49,59 +50,53 @@
     <div class="bg-gray-900 flex flex-col flex-shrink-0 overflow-hidden transition-[width] duration-200"
          :style="`width: ${sidebarCollapsed ? 0 : sidebarWidth}px`"
          :class="sidebarCollapsed ? '' : 'border-r border-gray-800'">
-      <div class="p-3 border-b border-gray-800 flex gap-2">
-        <button @click="emit('session-new')" class="flex-1 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm">+ New</button>
-        <button @click="loadSessions()" class="flex-1 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-sm">Load</button>
-      </div>
       <div class="flex-1 overflow-y-auto">
         <!-- Unified session list: works for both panel and standalone mode -->
         <template x-for="n in groupedSessions" :key="n.nodeId">
           <div>
             <!-- Node header -->
             <div @click="toggleGroup('node:' + n.nodeId)"
-                 class="px-3 py-2 flex items-center gap-1.5 cursor-pointer hover:bg-gray-800/50 text-xs text-gray-300 sticky top-0 bg-gray-900 border-b border-gray-800/50 z-10">
+                 class="px-3 py-1.5 flex items-center gap-1.5 cursor-pointer hover:bg-gray-800/50 text-xs text-gray-300 sticky top-0 bg-gray-900 border-b border-gray-800/50 z-10">
               <span x-text="expandedGroups.has('node:' + n.nodeId) ? '▾' : '▸'" class="text-gray-600 w-3"></span>
               <span class="w-2 h-2 rounded-full flex-shrink-0" :class="isNodeOnline(n.nodeId) ? 'bg-green-400' : 'bg-gray-600'"></span>
-              <button @click.stop="renameNodePrompt(n)" class="truncate flex-1 font-semibold text-left hover:text-blue-300" x-text="n.label || n.nodeId"></button>
-              <button x-show="!n.approved" @click.stop="approveNode(n.nodeId)" title="Approve node"
-                      class="px-1 py-0.5 rounded text-[10px] text-green-300 hover:bg-green-900/30">✓</button>
-              <span x-show="!n.approved" class="text-[10px] text-yellow-400">pending</span>
+              <span class="truncate flex-1 font-semibold" x-text="n.label || n.nodeId"></span>
+              <button @click.stop="openAddModal(n.nodeId)" title="Add session or folder"
+                      class="sidebar-btn">+</button>
             </div>
             <!-- CWD groups -->
             <template x-if="expandedGroups.has('node:' + n.nodeId)">
               <div>
                 <template x-for="g in n.cwdGroups" :key="n.nodeId + ':' + g.cwd">
                   <div>
-                    <div @click="toggleGroup(n.nodeId + ':' + g.cwd)"
-                         class="px-5 py-1.5 flex items-center gap-1.5 cursor-pointer hover:bg-gray-800/50 text-xs text-gray-400 sticky bg-gray-900 border-b border-gray-800/30" style="top:1.75rem">
-                      <span x-text="expandedGroups.has(n.nodeId + ':' + g.cwd) ? '▾' : '▸'" class="text-gray-600 w-3"></span>
-                      <span class="truncate flex-1 font-medium" x-text="g.cwd"></span>
-                      <a x-show="isVscodeActive(g.cwd, n.nodeId)" @click.stop
-                         :href="vscodeUrl(g.cwd, n.nodeId)" target="_blank" rel="noopener"
-                         title="Open VSCode" class="px-1.5 py-0.5 rounded hover:bg-gray-700 text-[11px] text-blue-300 no-underline">VS</a>
-                      <button x-show="!isVscodeActive(g.cwd, n.nodeId)"
-                              @click.stop="emit('vscode-open', {cwd: g.cwd, nodeId: n.nodeId})"
-                              title="Start VSCode" class="px-1.5 py-0.5 rounded hover:bg-gray-700 text-[11px] text-gray-500 hover:text-gray-300">VS</button>
-                      <button x-show="isVscodeActive(g.cwd, n.nodeId)"
-                              @click.stop="emit('vscode-stop', {cwd: g.cwd, nodeId: n.nodeId})"
-                              title="Stop VSCode" class="px-1 py-0.5 rounded text-[10px] text-red-300 hover:bg-red-900/30">Stop</button>
-                      <span class="text-gray-600" x-text="g.sessions.length"></span>
+                    <div class="pl-7 pr-3 py-1 flex items-center gap-1.5 hover:bg-gray-800/50 text-xs text-gray-400 sticky bg-gray-900 border-b border-gray-800/30" style="top:1.5rem">
+                      <span @click="toggleGroup(n.nodeId + ':' + g.cwd)" x-text="expandedGroups.has(n.nodeId + ':' + g.cwd) ? '▾' : '▸'" class="text-gray-600 w-3 cursor-pointer"></span>
+                      <span @click="g.sessions.length === 1 ? emit('session-switch', g.sessions[0].sessionId) : toggleGroup(n.nodeId + ':' + g.cwd)"
+                            class="truncate flex-1 font-medium cursor-pointer" x-text="g.cwd"></span>
+                      <span x-show="g.sessions.length > 1" class="text-gray-600 text-[10px]" x-text="'(' + g.sessions.length + ')'"></span>
+                      <div class="relative">
+                        <button @click.stop="folderMenu = folderMenu === (n.nodeId + ':' + g.cwd) ? null : (n.nodeId + ':' + g.cwd)"
+                                class="sidebar-btn">…</button>
+                        <div x-show="folderMenu === (n.nodeId + ':' + g.cwd)" @click.outside="folderMenu = null"
+                             class="absolute right-0 top-full mt-0.5 bg-gray-800 border border-gray-700 rounded shadow-lg py-1 z-30 min-w-[6rem]">
+                          <button @click.stop="emit('folder-remove', {cwd: g.cwd, nodeId: n.nodeId === '(local)' ? undefined : n.nodeId}); folderMenu = null"
+                                  class="w-full text-left px-3 py-1 text-xs text-gray-300 hover:bg-gray-700">Remove</button>
+                        </div>
+                      </div>
                     </div>
                     <template x-if="expandedGroups.has(n.nodeId + ':' + g.cwd)">
                       <div>
                         <template x-for="s in g.sessions" :key="s.sessionId">
                           <div @click="emit('session-switch', s.sessionId)"
                                :class="currentId === s.sessionId ? 'bg-gray-800 border-l-2 border-blue-400' : 'border-l-2 border-transparent'"
-                               class="pl-8 pr-3 py-2 cursor-pointer hover:bg-gray-800/50 relative group"
+                               class="pl-10 pr-3 py-1 cursor-pointer hover:bg-gray-800/50 group flex items-center gap-2"
                                :style="!isNodeOnline(n.nodeId) ? 'opacity:0.5' : ''">
-                            <div class="flex items-center gap-2">
-                              <span class="w-2 h-2 rounded-full flex-shrink-0" :class="activeSet.has(s.sessionId) ? 'bg-green-400 animate-pulse' : 'bg-gray-600'"></span>
-                              <span class="text-sm truncate" x-text="s.label || s.sessionId.slice(0, 8)"></span>
-                            </div>
+                            <span class="w-2 h-2 rounded-full flex-shrink-0" :class="activeSet.has(s.sessionId) ? 'bg-green-400 animate-pulse' : 'bg-gray-600'"></span>
+                            <span class="text-sm truncate flex-1" x-text="s.label || s.sessionId.slice(0, 8)"></span>
                             <button @click.stop="emit('session-remove', s.sessionId)"
-                                    class="absolute right-2 top-1.5 text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 text-xs">x</button>
+                                    class="sidebar-btn sidebar-btn-danger opacity-0 group-hover:opacity-100">x</button>
                           </div>
                         </template>
+                        <div x-show="g.sessions.length === 0" class="pl-10 pr-3 py-1 text-gray-600 text-xs">No sessions</div>
                       </div>
                     </template>
                   </div>
@@ -110,7 +105,7 @@
             </template>
           </div>
         </template>
-        <div x-show="managed.length === 0" class="p-4 text-gray-600 text-sm text-center">No sessions</div>
+        <div x-show="managed.length === 0 && managedFolders.length === 0" class="p-4 text-gray-600 text-sm text-center">No sessions</div>
       </div>
     </div>
     <!-- Resize handle -->
@@ -119,106 +114,84 @@
          role="separator" aria-orientation="vertical" aria-label="Resize sidebar"
          class="w-1 bg-gray-800 hover:bg-gray-700 active:bg-gray-700 cursor-col-resize flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"></div>
 
-    <!-- Load Sessions Modal -->
-    <div x-show="showLoadModal" x-cloak class="fixed inset-0 bg-black/60 flex items-center justify-center z-50" @click.self="showLoadModal = false">
-      <div class="bg-gray-900 border border-gray-700 rounded-lg w-[600px] max-h-[70vh] flex flex-col">
-        <div class="p-4 border-b border-gray-800 flex justify-between items-center">
-          <h3 class="text-sm font-semibold">Load Existing Session</h3>
-          <button @click="showLoadModal = false" class="text-gray-500 hover:text-gray-300">x</button>
-        </div>
-        <div class="p-3 border-b border-gray-800">
-          <input x-model="browseCwd" @input.debounce.500ms="fetchBrowseSessions()" placeholder="Filter by cwd..."
-                 class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm mono outline-none" />
-        </div>
-        <div class="flex-1 overflow-y-auto">
-          <div x-show="browseLoading" class="p-4 text-gray-500 text-sm text-center">Loading...</div>
-          <template x-for="g in groupedBrowse" :key="g.cwd">
-            <div>
-              <div @click="browseExpanded.has(g.cwd) ? browseExpanded.delete(g.cwd) : browseExpanded.add(g.cwd); browseExpanded = new Set(browseExpanded)"
-                   class="px-4 py-2 flex items-center gap-1.5 cursor-pointer hover:bg-gray-800/50 text-xs text-gray-400 sticky top-0 bg-gray-900 border-b border-gray-800/50">
-                <span x-text="browseExpanded.has(g.cwd) ? '▾' : '▸'" class="text-gray-600 w-3"></span>
-                <span class="truncate flex-1 font-medium" x-text="g.cwd"></span>
-                <span class="text-gray-600" x-text="g.sessions.length"></span>
-              </div>
-              <template x-if="browseExpanded.has(g.cwd)">
+    <!-- Add Modal (New / Browse) -->
+    <template x-if="addModal">
+      <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50" @click.self="addModal = null" @keydown.escape.window="addModal = null">
+        <div class="bg-gray-900 border border-gray-700 rounded-lg w-[560px] max-h-[70vh] flex flex-col overflow-hidden">
+          <!-- Tabs -->
+          <div class="flex items-center gap-1 px-3 py-2.5 border-b border-gray-800">
+            <button @click="addModal.tab = 'browse'"
+                    :class="addModal.tab === 'browse' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'"
+                    class="px-4 py-1.5 text-sm font-medium rounded">Load Existing</button>
+            <button @click="addModal.tab = 'add'"
+                    :class="addModal.tab === 'add' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'"
+                    class="px-4 py-1.5 text-sm font-medium rounded">New Session</button>
+            <span class="flex-1"></span>
+            <button @click="addModal = null" class="px-2 py-1 text-gray-600 hover:text-gray-300 text-xs rounded hover:bg-gray-800">x</button>
+          </div>
+          <!-- Tab: Add -->
+          <div x-show="addModal.tab === 'add'" class="p-4 space-y-3 text-sm">
+            <label class="text-xs text-gray-400 block">Folder</label>
+            <input x-model="newCwd" placeholder="/path/to/project"
+                   class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm mono outline-none focus:border-gray-500" />
+            <button @click="createNewSession()" :disabled="!newCwd.trim()"
+                    class="w-full px-3 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 rounded text-sm">Create</button>
+          </div>
+          <!-- Tab: Browse -->
+          <div x-show="addModal.tab === 'browse'" class="flex flex-col flex-1 min-h-0">
+            <div class="px-3 py-2 border-b border-gray-800">
+              <input x-model="browseFilter" @input.debounce.500ms="browseOffset = 0; fetchBrowseSessions()" placeholder="Filter by cwd..."
+                     class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1 text-xs mono outline-none" />
+            </div>
+            <div class="flex-1 overflow-y-auto">
+              <div x-show="browseLoading" class="p-4 text-gray-500 text-sm text-center">Loading...</div>
+              <template x-for="g in groupedBrowse" :key="g.cwd">
                 <div>
-                  <template x-for="s in g.sessions" :key="s.sessionId">
-                    <div @click="addToManaged(s)" class="pl-7 pr-4 py-2 hover:bg-gray-800 cursor-pointer border-b border-gray-800/50">
-                      <div class="text-sm truncate" x-text="s.summary || s.sessionId.slice(0, 12)"></div>
-                      <div class="text-xs text-gray-500 mt-0.5" x-text="s.lastModified ? new Date(s.lastModified).toLocaleString() : ''"></div>
+                  <div class="px-4 py-2 flex items-center gap-1.5 text-xs text-gray-400 sticky top-0 bg-gray-900 border-b border-gray-800/50">
+                    <span @click="browseClickFolder(g)"
+                          class="cursor-pointer flex items-center gap-1.5 flex-1 min-w-0 hover:text-gray-200">
+                      <span x-text="browseExpanded.has(g.cwd) ? '▾' : '▸'" class="text-gray-600 w-3"></span>
+                      <span class="truncate font-medium" x-text="g.cwd"></span>
+                      <span class="text-gray-600 flex-shrink-0" x-text="g.sessions.length"></span>
+                    </span>
+                    <input type="checkbox" :checked="browseCheckedFolders.has(g.cwd) || isManagedFolder(g.cwd, addModal?.nodeId)"
+                           :disabled="isManagedFolder(g.cwd, addModal?.nodeId)"
+                           @click.stop="if (!isManagedFolder(g.cwd, addModal?.nodeId)) toggleBrowseFolder(g.cwd)"
+                           class="w-3.5 h-3.5 rounded border-gray-600 bg-gray-800 flex-shrink-0 cursor-pointer disabled:opacity-50 disabled:cursor-default" title="Add folder" />
+                  </div>
+                  <template x-if="browseExpanded.has(g.cwd)">
+                    <div>
+                      <template x-for="s in g.sessions" :key="s.sessionId">
+                        <div class="pl-7 pr-4 py-2 flex items-center gap-2 hover:bg-gray-800/50 border-b border-gray-800/30">
+                          <div class="flex-1 min-w-0 cursor-pointer" @click="if (!isSessionManaged(s.sessionId)) toggleBrowseSession(s.sessionId)">
+                            <div class="text-sm truncate" x-text="s.summary || s.sessionId.slice(0, 12)"></div>
+                            <div class="text-xs text-gray-500 mt-0.5" x-text="s.lastModified ? new Date(s.lastModified).toLocaleString() : ''"></div>
+                          </div>
+                          <input type="checkbox" :checked="browseCheckedSessions.has(s.sessionId) || isSessionManaged(s.sessionId)"
+                                 :disabled="isSessionManaged(s.sessionId)"
+                                 @click.stop="if (!isSessionManaged(s.sessionId)) toggleBrowseSession(s.sessionId)"
+                                 class="w-3.5 h-3.5 rounded border-gray-600 bg-gray-800 flex-shrink-0 cursor-pointer disabled:opacity-50 disabled:cursor-default" />
+                        </div>
+                      </template>
                     </div>
                   </template>
                 </div>
               </template>
+              <div x-show="!browseLoading && browseSessions.length === 0" class="p-4 text-gray-600 text-sm text-center">No sessions found</div>
+              <button x-show="browseHasMore" @click="browseOffset += browseLimit; fetchBrowseSessions(true)"
+                      class="w-full py-2 text-sm text-gray-500 hover:text-gray-300 hover:bg-gray-800">Load more...</button>
             </div>
-          </template>
-          <div x-show="!browseLoading && browseSessions.length === 0" class="p-4 text-gray-600 text-sm text-center">No sessions found</div>
-          <button x-show="browseHasMore" @click="browseOffset += browseLimit; fetchBrowseSessions(true)"
-                  class="w-full py-2 text-sm text-gray-500 hover:text-gray-300 hover:bg-gray-800">Load more...</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Rename node modal -->
-    <template x-if="renameModal">
-      <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @click.self="renameModal = null" @keydown.escape.window="renameModal = null">
-        <div class="bg-gray-800 rounded-lg shadow-xl p-4 w-72">
-          <div class="text-sm text-gray-300 mb-2">Rename node</div>
-          <input x-ref="renameInput" x-model="renameModal.label" @keydown.enter="renameNodeSubmit()" @keydown.escape="renameModal = null"
-                 class="w-full bg-gray-900 text-gray-100 rounded px-3 py-1.5 text-sm outline-none border border-gray-600 focus:border-blue-500" />
-          <div class="flex justify-end gap-2 mt-3">
-            <button @click="renameModal = null" class="px-3 py-1 rounded text-xs text-gray-400 hover:bg-gray-700">Cancel</button>
-            <button @click="renameNodeSubmit()" class="px-3 py-1 rounded text-xs bg-blue-600 hover:bg-blue-500 text-white">Save</button>
+            <div x-show="hasChecked" class="p-3 border-t border-gray-800">
+              <button @click="addSelected()" class="w-full px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm">
+                Add selected
+                (<span x-text="browseCheckedFolders.size + browseCheckedSessions.size"></span>)
+              </button>
+            </div>
           </div>
         </div>
       </div>
     </template>
   </div><!-- /sidebar -->
-
-  <!-- VSCode Modal -->
-  <div x-data="vscodeUi()" @vscode-stop.window="stop($event.detail.cwd, $event.detail.nodeId)">
-    <div x-show="show" x-cloak class="fixed inset-0 bg-black/60 flex items-center justify-center z-50" @click.self="show = false">
-      <div class="bg-gray-900 border border-gray-700 rounded-lg w-[560px] max-h-[70vh] flex flex-col">
-        <div class="p-4 border-b border-gray-800 flex justify-between items-center">
-          <h3 class="text-sm font-semibold">Start VSCode Server</h3>
-          <button @click="show = false" class="text-gray-500 hover:text-gray-300">x</button>
-        </div>
-        <div class="px-4 pt-3 border-b border-gray-800 flex gap-2 text-xs">
-          <button @click="tab = 'start'" :class="tab === 'start' ? 'bg-gray-700 text-gray-100' : 'bg-gray-800 text-gray-400 hover:text-gray-200'" class="px-3 py-1.5 rounded-t">启动</button>
-          <button @click="tab = 'install'" :class="tab === 'install' ? 'bg-gray-700 text-gray-100' : 'bg-gray-800 text-gray-400 hover:text-gray-200'" class="px-3 py-1.5 rounded-t">安装</button>
-        </div>
-        <div class="p-4 space-y-3 text-sm overflow-y-auto">
-          <div class="text-gray-400">cwd: <span class="mono text-gray-200" x-text="targetCwd"></span></div>
-          <div x-show="loading" class="text-gray-500">Loading...</div>
-          <div x-show="tab === 'start'" class="space-y-3">
-            <label class="text-xs text-gray-400 block">Version</label>
-            <select x-model="selectedCommit" :disabled="versions.length === 0"
-                    class="w-full bg-gray-800 text-gray-300 rounded px-2 py-2 text-sm outline-none disabled:opacity-60">
-              <template x-for="v in versions" :key="v.commit">
-                <option :value="v.commit" x-text="`${v.version} (${v.commit.slice(0, 12)})`"></option>
-              </template>
-            </select>
-            <div x-show="versions.length === 0" class="text-yellow-400 text-xs">请先在「安装」页安装</div>
-            <button @click="start()" :disabled="!selectedCommit || versions.length === 0 || loading" x-show="!startedUrl"
-                    class="w-full px-3 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 rounded text-sm">Start</button>
-            <a x-show="startedUrl" :href="startedUrl" target="_blank" rel="noopener" @click="show = false"
-               class="block w-full px-3 py-2 bg-green-600 hover:bg-green-500 rounded text-sm text-center no-underline text-white">Open VSCode</a>
-          </div>
-          <div x-show="tab === 'install'" class="space-y-3">
-            <label class="text-xs text-gray-400 block">VS Code version</label>
-            <input x-model="installVersion" @input.debounce.400ms="fetchInstallInfo()" placeholder="1.112.0"
-                   class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm mono outline-none" />
-            <label class="text-xs text-gray-400 block">Prompt (copy to Agent Link session)</label>
-            <textarea readonly class="w-full h-24 bg-gray-800 border border-gray-700 rounded p-2 text-xs mono text-gray-300" x-text="install?.prompt || ''"></textarea>
-            <label class="text-xs text-gray-400 block">Install script</label>
-            <textarea readonly class="w-full h-40 bg-gray-800 border border-gray-700 rounded p-2 text-xs mono text-gray-300" x-text="install?.script || ''"></textarea>
-            <label class="text-xs text-gray-400 block">Install command</label>
-            <textarea readonly class="w-full h-20 bg-gray-800 border border-gray-700 rounded p-2 text-xs mono text-gray-300" x-text="install?.command || ''"></textarea>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
 
   <!-- Main -->
   <div class="flex-1 flex flex-col min-w-0">
@@ -228,15 +201,11 @@
               :title="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
               x-text="sidebarCollapsed ? '☰' : '◧'"></button>
       <template x-if="panelMode">
-        <div class="flex items-center gap-2">
-          <select x-model="selectedNodeId" class="bg-gray-800 text-gray-300 rounded px-2 py-1 text-xs outline-none">
-            <template x-for="n in nodes" :key="n.nodeId">
-              <option :value="n.nodeId" :disabled="!n.online || !n.approved" x-text="(n.online ? '● ' : '○ ') + (n.label || n.nodeId) + (n.approved ? '' : ' (pending)')"></option>
-            </template>
-          </select>
-          <input x-model="panelAdminSecret" type="password" placeholder="admin secret"
-                 class="bg-gray-800 text-gray-300 rounded px-2 py-1 text-xs outline-none w-28" />
-        </div>
+        <select x-model="selectedNodeId" class="bg-gray-800 text-gray-300 rounded px-2 py-1 text-xs outline-none">
+          <template x-for="n in nodes" :key="n.nodeId">
+            <option :value="n.nodeId" :disabled="!n.online" x-text="(n.online ? '● ' : '○ ') + (n.label || n.nodeId)"></option>
+          </template>
+        </select>
       </template>
       <button @click="toggleTheme()" class="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-xs flex-shrink-0"
               :title="theme === 'light' ? 'Switch to dark' : 'Switch to light'" x-text="theme === 'light' ? '☀' : '☾'"></button>

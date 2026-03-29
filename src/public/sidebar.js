@@ -1,24 +1,25 @@
 // Sidebar component — nested inside app(), inherits parent scope for reading:
-//   managed, nodes, currentId, activeSet, panelMode, vscodeActive, cwd, panelAdminSecret, sidebarWidth, sidebarCollapsed, clampWidth
+//   managed, managedFolders, nodes, currentId, activeSet, panelMode, cwd, sidebarWidth, sidebarCollapsed, clampWidth
 // Communicates outward via emit():
-//   session-switch, session-new, session-remove, session-add, vscode-open, data-refresh
+//   session-switch, session-new, session-remove, session-add, session-create, folder-add, folder-remove, data-refresh
 
 function sidebar() {
   return {
     expandedGroups: new Set(),
 
-    // Load modal
-    showLoadModal: false,
+    // Add modal
+    addModal: null,  // {nodeId, tab: 'browse'|'add'}
+    newCwd: '',
+    folderMenu: null,
     browseSessions: [],
     browseLoading: false,
-    browseCwd: '',
+    browseFilter: '',
     browseLimit: 30,
     browseOffset: 0,
-    browseExpanded: new Set(),
     browseHasMore: false,
-
-    // Rename node modal
-    renameModal: null,
+    browseExpanded: new Set(),
+    browseCheckedSessions: new Set(),
+    browseCheckedFolders: new Set(),
 
     init() {
       // Auto-expand the local node in standalone mode
@@ -45,13 +46,23 @@ function sidebar() {
     },
 
     // Unified: always returns [{nodeId, label, approved, cwdGroups: [{cwd, sessions}]}]
-    // In standalone mode, one virtual "(local)" node.
+    // Merges managedFolders so empty folders still appear.
+    // Standalone mode: always shows a "(local)" node.
     get groupedSessions() {
       const nodeMap = new Map();
+      if (!this.panelMode) {
+        nodeMap.set('(local)', { nodeId: '(local)', label: '(local)', approved: true, cwdGroups: [] });
+      }
       for (const n of this.nodes) {
         nodeMap.set(n.nodeId, { nodeId: n.nodeId, label: n.label, approved: n.approved, cwdGroups: [] });
       }
       const cwdMap = new Map();
+      // Add managed folders first (may be empty)
+      for (const f of this.managedFolders) {
+        const nid = f.nodeId || '(local)';
+        const key = nid + ':' + f.cwd;
+        if (!cwdMap.has(key)) cwdMap.set(key, { nodeId: nid, cwd: f.cwd, sessions: [], isFolder: true });
+      }
       for (const s of this.managed) {
         const nid = s.nodeId || '(local)';
         const key = nid + ':' + (s.cwd || '(unknown)');
@@ -64,16 +75,6 @@ function sidebar() {
         nodeMap.get(group.nodeId).cwdGroups.push(group);
       }
       return [...nodeMap.values()];
-    },
-
-    get groupedBrowse() {
-      const map = new Map();
-      for (const s of this.browseSessions) {
-        const key = s.cwd || '(unknown)';
-        if (!map.has(key)) map.set(key, []);
-        map.get(key).push(s);
-      }
-      return Array.from(map, ([cwd, sessions]) => ({ cwd, sessions }));
     },
 
     // --- Resize ---
@@ -114,57 +115,43 @@ function sidebar() {
       else if (event.key === 'End') { event.preventDefault(); this.sidebarWidth = 480; }
     },
 
-    // --- VSCode helpers (read-only, for sidebar VS buttons) ---
-    isVscodeActive(cwd, nodeId) {
-      return !!this.vscodeActive[nodeId + ':' + cwd] || !!this.vscodeActive[cwd];
-    },
-    vscodeUrl(cwd, nodeId) {
-      const item = this.vscodeActive[nodeId + ':' + cwd] || this.vscodeActive[cwd];
-      if (!item?.id) return '#';
-      return item.nodeId ? `/vscode/${item.nodeId}/${item.id}/` : `/vscode/${item.id}/`;
-    },
-
     // --- Node ---
     isNodeOnline(nodeId) {
       if (nodeId === '(local)') return true;
       return this.nodes.find(n => n.nodeId === nodeId)?.online ?? false;
     },
-    async approveNode(nodeId) {
-      if (!this.panelAdminSecret) return alert('Set admin secret in header first');
-      try { await fetch(`/api/nodes/${encodeURIComponent(nodeId)}/approve`, { method: 'POST', headers: { Authorization: `Bearer ${this.panelAdminSecret}` } }); } catch {}
-      emit('data-refresh');
-    },
-    async renameNodePrompt(node) {
-      this.renameModal = { nodeId: node.nodeId, label: node.label || node.nodeId };
-      await this.$nextTick();
-      this.$refs.renameInput?.focus();
-      this.$refs.renameInput?.select();
-    },
-    async renameNodeSubmit() {
-      const m = this.renameModal;
-      if (!m) return;
-      const label = m.label.trim();
-      if (!label) { this.renameModal = null; return; }
-      if (!this.panelAdminSecret) { this.renameModal = null; return alert('Set admin secret in header first'); }
-      try { await fetch(`/api/nodes/${encodeURIComponent(m.nodeId)}/label`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.panelAdminSecret}` }, body: JSON.stringify({ label }) }); } catch {}
-      this.renameModal = null;
-      emit('data-refresh');
+
+    // --- Folder management ---
+    isManagedFolder(cwd, nodeId) {
+      const nid = (!nodeId || nodeId === '(local)') ? '' : nodeId;
+      return this.managedFolders.some(f => f.cwd === cwd && (f.nodeId || '') === nid);
     },
 
-    // --- Load sessions modal ---
-    loadSessions() {
-      this.showLoadModal = true;
-      this.browseCwd = '';
-      this.browseOffset = 0;
+    isSessionManaged(sessionId) {
+      return this.managed.some(s => s.sessionId === sessionId);
+    },
+
+    // --- Add modal ---
+    openAddModal(nodeId, cwd) {
+      this.addModal = { nodeId: nodeId || '(local)' };
+      this.newCwd = cwd || this.cwd;
+      this.browseFilter = cwd || '';
+      this.browseCheckedSessions = new Set();
+      this.browseCheckedFolders = new Set();
       this.browseSessions = [];
+      this.browseOffset = 0;
+      this.browseHasMore = false;
       this.browseExpanded = new Set();
+      // Default to 'browse' tab
+      this.addModal.tab = 'browse';
       this.fetchBrowseSessions();
     },
+
     async fetchBrowseSessions(append = false) {
       this.browseLoading = true;
       try {
         const params = new URLSearchParams({ limit: String(this.browseLimit), offset: String(this.browseOffset) });
-        if (this.browseCwd) params.set('cwd', this.browseCwd);
+        if (this.browseFilter) params.set('cwd', this.browseFilter);
         const data = await (await fetch(`/api/sessions?${params}`)).json();
         this.browseHasMore = Array.isArray(data) && data.length >= this.browseLimit;
         this.browseSessions = append ? [...this.browseSessions, ...data] : data;
@@ -173,16 +160,91 @@ function sidebar() {
         this.browseHasMore = false;
       }
       this.browseLoading = false;
+      // Auto-expand if only one folder group
+      if (!append) {
+        const groups = this.groupedBrowse;
+        if (groups.length === 1) {
+          this.browseExpanded.add(groups[0].cwd);
+          this.browseExpanded = new Set(this.browseExpanded);
+        }
+      }
     },
-    addToManaged(session) {
-      const entry = {
-        sessionId: session.sessionId, cwd: session.cwd || this.cwd, model: '',
-        label: session.summary || session.firstPrompt?.slice(0, 40) || session.sessionId.slice(0, 12),
-      };
-      if (session.nodeId) entry.nodeId = session.nodeId;
-      emit('session-add', entry);
-      this.showLoadModal = false;
-      emit('session-switch', session.sessionId);
+
+    get groupedBrowse() {
+      const map = new Map();
+      for (const s of this.browseSessions) {
+        const key = s.cwd || '(unknown)';
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(s);
+      }
+      return Array.from(map, ([cwd, sessions]) => ({ cwd, sessions }));
+    },
+
+    toggleBrowseSession(sessionId) {
+      if (this.browseCheckedSessions.has(sessionId)) this.browseCheckedSessions.delete(sessionId);
+      else this.browseCheckedSessions.add(sessionId);
+      this.browseCheckedSessions = new Set(this.browseCheckedSessions);
+    },
+
+    toggleBrowseFolder(cwd) {
+      if (this.browseCheckedFolders.has(cwd)) this.browseCheckedFolders.delete(cwd);
+      else this.browseCheckedFolders.add(cwd);
+      this.browseCheckedFolders = new Set(this.browseCheckedFolders);
+    },
+
+    browseClickFolder(g) {
+      if (g.sessions.length === 1) {
+        const s = g.sessions[0];
+        const nid = this.addModal?.nodeId === '(local)' ? undefined : this.addModal?.nodeId;
+        if (!this.isSessionManaged(s.sessionId)) {
+          emit('session-add', {
+            sessionId: s.sessionId, cwd: s.cwd || this.cwd, nodeId: nid,
+            label: s.summary || s.firstPrompt?.slice(0, 40) || s.sessionId.slice(0, 12),
+          });
+        }
+        emit('session-switch', s.sessionId);
+        this.addModal = null;
+      } else {
+        if (this.browseExpanded.has(g.cwd)) this.browseExpanded.delete(g.cwd);
+        else this.browseExpanded.add(g.cwd);
+        this.browseExpanded = new Set(this.browseExpanded);
+      }
+    },
+
+    get hasChecked() {
+      return this.browseCheckedSessions.size > 0 || this.browseCheckedFolders.size > 0;
+    },
+
+    createNewSession() {
+      if (!this.newCwd.trim()) return;
+      const nodeId = this.addModal?.nodeId;
+      emit('session-create', { cwd: this.newCwd.trim(), nodeId: nodeId === '(local)' ? undefined : nodeId });
+      this.addModal = null;
+    },
+
+    addSelected() {
+      const nodeId = this.addModal?.nodeId;
+      const nid = nodeId === '(local)' ? undefined : nodeId;
+      // Add checked folders
+      for (const cwd of this.browseCheckedFolders) {
+        emit('folder-add', { cwd, nodeId: nid });
+      }
+      // Add checked sessions
+      for (const sessionId of this.browseCheckedSessions) {
+        const session = this.browseSessions.find(s => s.sessionId === sessionId);
+        if (session) {
+          emit('session-add', {
+            sessionId, cwd: session.cwd || this.cwd, nodeId: nid,
+            label: session.summary || session.firstPrompt?.slice(0, 40) || sessionId.slice(0, 12),
+          });
+        }
+      }
+      // Switch to the first checked session
+      if (this.browseCheckedSessions.size > 0) {
+        const first = this.browseCheckedSessions.values().next().value;
+        emit('session-switch', first);
+      }
+      this.addModal = null;
     },
   };
 }

@@ -79,6 +79,15 @@
 .task-note-tag { display: inline-block; margin-right: 0.45rem; color: #f59e0b; font-weight: 600; }
 .task-note-summary { color: #cbd5e1; }
 
+/* Sidebar action buttons */
+.sidebar-btn {
+  width: 1.5rem; height: 1.5rem; display: flex; align-items: center; justify-content: center;
+  border-radius: 0.25rem; font-size: 0.875rem; line-height: 1; flex-shrink: 0;
+  color: #6b7280; cursor: pointer;
+}
+.sidebar-btn:hover { background: #374151; color: #e5e7eb; }
+.sidebar-btn-danger:hover { background: transparent; color: #f87171; }
+
 /* Light theme */
 body.light-theme {
   background: #f3f4f6; color: #111827;
@@ -115,7 +124,7 @@ body.light-theme .process-body { border-left-color: rgba(156, 163, 175, 0.6); }
 body.light-theme .tool-details > summary::before { color: #6b7280; }
 body.light-theme .border-gray-800, body.light-theme .border-gray-800\/50, body.light-theme .border-gray-800\/30 { border-color: #d1d5db !important; }
 body.light-theme .bg-gray-950, body.light-theme .bg-gray-900, body.light-theme .bg-gray-900\/50, body.light-theme .bg-gray-900\/30, body.light-theme .bg-gray-800, body.light-theme .bg-gray-800\/50, body.light-theme .bg-gray-700 { background-color: #ffffff !important; }
-body.light-theme .hover\:bg-gray-800:hover, body.light-theme .hover\:bg-gray-800\/50:hover, body.light-theme .hover\:bg-gray-700:hover, body.light-theme .hover\:bg-gray-600:hover { background-color: #f3f4f6 !important; }
+body.light-theme .hover\:bg-gray-800:hover, body.light-theme .hover\:bg-gray-800\/50:hover, body.light-theme .hover\:bg-gray-700:hover, body.light-theme .hover\:bg-gray-600:hover { background-color: #e5e7eb !important; }
 body.light-theme .text-gray-100, body.light-theme .text-gray-300, body.light-theme .text-gray-200, body.light-theme .text-gray-400 { color: #111827 !important; }
 body.light-theme .text-gray-500, body.light-theme .text-gray-600 { color: #4b5563 !important; }
 body.light-theme .bg-blue-600 { background-color: #2563eb !important; }
@@ -123,3 +132,6 @@ body.light-theme .hover\:bg-blue-500:hover { background-color: #1d4ed8 !importan
 body.light-theme .bg-red-700 { background-color: #dc2626 !important; }
 body.light-theme .hover\:bg-red-600:hover { background-color: #b91c1c !important; }
 body.light-theme .bg-black\/60 { background-color: rgba(17, 24, 39, 0.35) !important; }
+body.light-theme .sidebar-btn { color: #9ca3af; }
+body.light-theme .sidebar-btn:hover { background: #d1d5db; color: #111827; }
+body.light-theme .sidebar-btn-danger:hover { background: transparent; color: #ef4444; }

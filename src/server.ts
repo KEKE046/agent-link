@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import * as sessions from "./sessions";
-import { addManaged, listManaged, removeManaged } from "./managed";
+import { addManaged, listManaged, removeManaged, listFolders, addFolder, removeFolder } from "./managed";
 import {
   getActiveServerById,
   getInstallCommand,
@@ -183,6 +183,31 @@ app.post("/api/managed", async (c) => {
 
 app.delete("/api/managed/:id", (c) => {
   return c.json(removeManaged(c.req.param("id")));
+});
+
+app.get("/api/managed-folders", (c) => {
+  return c.json(listFolders());
+});
+
+app.post("/api/managed-folders", async (c) => {
+  const body = await c.req.json();
+  const cwd = typeof body?.cwd === "string" ? body.cwd : "";
+  if (!cwd) return c.json({ error: "cwd required" }, 400);
+  return c.json(
+    addFolder({
+      cwd,
+      nodeId: typeof body?.nodeId === "string" ? body.nodeId : undefined,
+    })
+  );
+});
+
+app.delete("/api/managed-folders", async (c) => {
+  const body = await c.req.json();
+  const cwd = typeof body?.cwd === "string" ? body.cwd : "";
+  if (!cwd) return c.json({ error: "cwd required" }, 400);
+  return c.json(
+    removeFolder(cwd, typeof body?.nodeId === "string" ? body.nodeId : undefined)
+  );
 });
 
 app.get("/api/vscode/versions", async (c) => {
