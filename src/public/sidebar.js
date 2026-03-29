@@ -270,6 +270,7 @@ function sidebar() {
       if (bio) parts.push(bio);
       parts.push('You are running inside agent-link, a multi-agent coordination system.');
       parts.push('Run `agent-link skill` to see available commands and how to communicate with other agents.');
+      parts.push('Run `agent-link inspect $AGENT_LINK_AGENT_NAME` to learn which node you are on and your current status.');
       return parts.join('\n');
     },
 
