@@ -22,6 +22,7 @@ if (args.includes("--help") || args.includes("-h")) {
   --accept-nodes      Accept remote node connections via WebSocket
   --no-local          Don't run local Claude SDK (router-only, requires --accept-nodes)
   --connect-to <url>  Run as node, connect to remote panel
+                      Can combine with --accept-nodes to relay sub-nodes
   --name <name>       Node display name (default: machine ID)
   --token <value>     Admin token for panel auth (auto-generated if omitted)
   --no-auth           Disable auth even in panel mode (for testing)
@@ -41,7 +42,7 @@ function getArg(flag: string): string | undefined {
   return i >= 0 ? args[i + 1] : undefined;
 }
 
-if (noLocal && !acceptNodes) {
+if (noLocal && !acceptNodes && !connectTo) {
   console.error("Error: --no-local requires --accept-nodes");
   process.exit(1);
 }
@@ -56,6 +57,11 @@ if (connectTo) {
 
   const { connect } = await import("./node/connector");
   connect(connectTo, machineId, label);
+
+  if (acceptNodes) {
+    const { startRelay } = await import("./node/relay");
+    startRelay(connectTo, port);
+  }
 } else {
   // ---- Server mode ----
   const localId = noLocal ? null : getMachineId();

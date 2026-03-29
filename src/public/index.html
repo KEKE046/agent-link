@@ -77,8 +77,11 @@
             <div @click="toggleGroup('node:' + n.nodeId)"
                  class="px-3 py-1.5 flex items-center gap-1.5 cursor-pointer hover:bg-gray-800/50 text-xs text-gray-300 sticky top-0 bg-gray-900 border-b border-gray-800/50 z-10">
               <span x-text="expandedGroups.has('node:' + n.nodeId) ? '▾' : '▸'" class="text-gray-600 w-3"></span>
-              <span class="w-2 h-2 rounded-full flex-shrink-0" :class="isNodeOnline(n.nodeId) ? 'bg-green-400' : 'bg-gray-600'"></span>
+              <span class="w-2 h-2 rounded-full flex-shrink-0"
+                    :class="!isNodeOnline(n.nodeId) ? 'bg-gray-600' : n.approved === false ? 'bg-yellow-400' : 'bg-green-400'"></span>
               <span class="truncate flex-1 font-semibold" x-text="n.label || n.nodeId"></span>
+              <button x-show="n.approved === false && isNodeOnline(n.nodeId)" @click.stop="approveNode(n.nodeId)"
+                      class="sidebar-btn text-yellow-400 hover:text-yellow-300" title="Approve node">✓</button>
               <button @click.stop="openAddModal(n.nodeId)" title="Add session or folder"
                       class="sidebar-btn">+</button>
             </div>
@@ -242,7 +245,8 @@
       <template x-if="panelMode">
         <select x-model="selectedNodeId" class="bg-gray-800 text-gray-300 rounded px-2 py-1 text-xs outline-none">
           <template x-for="n in nodes" :key="n.nodeId">
-            <option :value="n.nodeId" :disabled="!n.online" x-text="(n.online ? '● ' : '○ ') + (n.label || n.nodeId)"></option>
+            <option :value="n.nodeId" :disabled="!n.online || !n.approved"
+                    x-text="(!n.online ? '○ ' : !n.approved ? '◉ ' : '● ') + (n.label || n.nodeId)"></option>
           </template>
         </select>
       </template>

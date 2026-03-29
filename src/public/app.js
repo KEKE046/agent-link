@@ -105,7 +105,7 @@ function app() {
           this.panelMode = true;
           this.nodes = await res.json();
           if (!this.selectedNodeId && this.nodes.length > 0)
-            this.selectedNodeId = (this.nodes.find(n => n.online) || this.nodes[0]).nodeId;
+            this.selectedNodeId = (this.nodes.find(n => n.online && n.approved) || this.nodes.find(n => n.online) || this.nodes[0]).nodeId;
         }
       } catch { this.panelMode = false; }
     },

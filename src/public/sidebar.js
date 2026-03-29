@@ -140,6 +140,13 @@ function sidebar() {
       return this.nodes.find(n => n.nodeId === nodeId)?.online ?? false;
     },
 
+    async approveNode(nodeId) {
+      try {
+        await fetch(`/api/nodes/${encodeURIComponent(nodeId)}/approve`, { method: 'POST' });
+        emit('data-refresh');
+      } catch {}
+    },
+
     // --- Folder management ---
     isManagedFolder(cwd, nodeId) {
       const nid = (!nodeId || nodeId === '(local)') ? '' : nodeId;
