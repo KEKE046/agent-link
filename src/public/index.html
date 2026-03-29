@@ -59,7 +59,50 @@
 
   <!-- Main app -->
   <template x-if="!authRequired || authenticated">
-  <div class="flex h-screen w-full">
+  <div class="flex flex-col h-screen w-full">
+
+  <!-- ═══ Header (full width) ═══ -->
+  <div class="h-11 px-3 border-b border-gray-800 flex items-center gap-2 bg-gray-900 flex-shrink-0">
+      <button @click="toggleSidebar()" class="header-btn"
+              :title="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+              x-text="sidebarCollapsed ? '☰' : '◧'"></button>
+      <div class="w-px h-4 bg-gray-800 mx-0.5 flex-shrink-0"></div>
+      <!-- Logo mark -->
+      <svg class="text-gray-500 flex-shrink-0" width="18" height="18" viewBox="0 0 80 80" fill="none">
+        <circle cx="20" cy="40" r="13" stroke="currentColor" stroke-width="2.5"/>
+        <circle cx="20" cy="40" r="7.5" stroke="currentColor" stroke-width="2.5"/>
+        <circle cx="20" cy="40" r="3.5" fill="currentColor"/>
+        <circle cx="60" cy="18" r="7.5" stroke="currentColor" stroke-width="2.5"/>
+        <circle cx="60" cy="18" r="3" fill="currentColor"/>
+        <circle cx="60" cy="62" r="7.5" stroke="currentColor" stroke-width="2.5"/>
+        <circle cx="60" cy="62" r="3" fill="currentColor"/>
+        <line x1="31.4" y1="33.7" x2="53.4" y2="21.6" stroke="currentColor" stroke-width="2" stroke-opacity="0.5"/>
+        <line x1="31.4" y1="46.3" x2="53.4" y2="58.4" stroke="currentColor" stroke-width="2" stroke-opacity="0.5"/>
+      </svg>
+      <span class="text-[11px] font-semibold tracking-[0.14em] text-gray-500 uppercase hidden sm:block select-none">Agent Link</span>
+      <div class="w-px h-4 bg-gray-800 mx-1 flex-shrink-0"></div>
+      <!-- Session state indicator -->
+      <div x-show="currentId" class="flex items-center gap-1.5 flex-shrink-0">
+        <span class="w-1.5 h-1.5 rounded-full flex-shrink-0"
+              :class="activeSet.has(currentId) ? 'bg-green-400 animate-pulse' : 'bg-gray-700'"></span>
+        <span class="text-[10px] font-mono tracking-[0.18em] uppercase"
+              :class="activeSet.has(currentId) ? 'text-green-500' : 'text-gray-600'"
+              x-text="activeSet.has(currentId) ? 'active' : 'idle'"></span>
+      </div>
+      <span class="flex-1 min-w-0"></span>
+      <!-- Session name + cost -->
+      <span x-show="currentId" class="text-gray-500 text-xs truncate max-w-[180px] flex-shrink min-w-0"
+            x-text="managed.find(s => s.sessionId === currentId)?.name || ''"></span>
+      <span x-show="totalCost > 0" class="text-gray-700 text-[11px] font-mono flex-shrink-0 ml-1">$<span x-text="totalCost.toFixed(4)"></span></span>
+      <div class="w-px h-4 bg-gray-800 mx-1 flex-shrink-0"></div>
+      <button @click="toggleTheme()" class="header-btn"
+              :title="theme === 'light' ? 'Switch to dark' : 'Switch to light'"
+              x-text="theme === 'light' ? '☼' : '☾'"></button>
+      <button @click="emit('config-toggle')" class="header-btn emoji-text" title="Agent config">⚙</button>
+  </div>
+
+  <!-- ═══ Panel row ═══ -->
+  <div class="flex flex-1 min-h-0">
 
   <!-- ═══ Left Sidebar ═══ -->
   <div x-data="sidebar()" class="flex flex-shrink-0">
@@ -71,8 +114,8 @@
           <div>
             <!-- Node header -->
             <div @click="toggleGroup('node:' + n.nodeId)"
-                 class="px-3 py-1.5 flex items-center gap-1.5 cursor-pointer hover:bg-gray-800/50 text-xs text-gray-300 sticky top-0 bg-gray-900 z-10 group">
-              <span class="w-3 flex-shrink-0 inline-block transition-transform duration-150 text-gray-500 text-[11px]"
+                 class="px-3 py-1 flex items-center gap-1.5 cursor-pointer hover:bg-gray-800/50 text-xs text-gray-300 sticky top-0 bg-gray-900 z-10 group">
+              <span class="sidebar-arrow w-3 flex-shrink-0 inline-block text-gray-500 text-[11px]"
                     :class="expandedGroups.has('node:' + n.nodeId) ? 'rotate-90' : ''">›</span>
               <span class="w-2 h-2 rounded-full flex-shrink-0"
                     :class="!isNodeOnline(n.nodeId) ? 'bg-gray-600' : n.approved === false ? 'bg-yellow-400' : 'bg-green-400'"></span>
@@ -89,9 +132,9 @@
               <div>
                 <template x-for="g in n.cwdGroups" :key="n.nodeId + ':' + g.cwd">
                   <div>
-                    <div class="pl-7 pr-3 py-1 flex items-center gap-1.5 hover:bg-gray-800/50 text-xs text-gray-400 sticky bg-gray-900 group" style="top:1.5rem">
+                    <div class="pl-7 pr-3 py-0.5 flex items-center gap-1.5 hover:bg-gray-800/50 text-xs text-gray-400 sticky bg-gray-900 group" style="top:1.5rem">
                       <span @click="toggleGroup(n.nodeId + ':' + g.cwd)"
-                            class="w-3 flex-shrink-0 inline-block transition-transform duration-150 text-gray-500 text-[11px] cursor-pointer"
+                            class="sidebar-arrow w-3 flex-shrink-0 inline-block text-gray-500 text-[11px] cursor-pointer"
                             :class="expandedGroups.has(n.nodeId + ':' + g.cwd) ? 'rotate-90' : ''">›</span>
                       <span @click="g.sessions.length === 1 ? emit('session-switch', g.sessions[0].sessionId) : toggleGroup(n.nodeId + ':' + g.cwd)"
                             class="truncate flex-1 font-medium cursor-pointer" :title="g.cwd"
@@ -107,7 +150,7 @@
                         <template x-for="s in g.sessions" :key="s.sessionId">
                           <div @click="emit('session-switch', s.sessionId)"
                                :class="currentId === s.sessionId ? 'bg-gray-800 border-l-2 border-teal-400' : 'border-l-2 border-transparent'"
-                               class="pl-10 pr-3 py-1 cursor-pointer hover:bg-gray-800/50 group flex items-center gap-2"
+                               class="pl-10 pr-3 py-0.5 cursor-pointer hover:bg-gray-800/50 group flex items-center gap-2"
                                :style="!isNodeOnline(n.nodeId) ? 'opacity:0.5' : ''">
                             <span class="w-2 h-2 rounded-full flex-shrink-0" :class="activeSet.has(s.sessionId) ? 'bg-green-400 animate-pulse' : 'bg-gray-600'"></span>
                             <span class="text-sm truncate flex-1" x-text="s.name || s.sessionId.slice(0, 8)"></span>
@@ -411,45 +454,6 @@
 
   <!-- ═══ Main Content ═══ -->
   <div class="flex-1 flex flex-col min-w-0">
-    <!-- Header -->
-    <div class="h-11 px-3 border-b border-gray-800 flex items-center gap-2 bg-gray-900 flex-shrink-0">
-      <button @click="toggleSidebar()" class="header-btn"
-              :title="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
-              x-text="sidebarCollapsed ? '☰' : '◧'"></button>
-      <div class="w-px h-4 bg-gray-800 mx-0.5 flex-shrink-0"></div>
-      <!-- Logo mark -->
-      <svg class="text-gray-500 flex-shrink-0" width="18" height="18" viewBox="0 0 80 80" fill="none">
-        <circle cx="20" cy="40" r="13" stroke="currentColor" stroke-width="2.5"/>
-        <circle cx="20" cy="40" r="7.5" stroke="currentColor" stroke-width="2.5"/>
-        <circle cx="20" cy="40" r="3.5" fill="currentColor"/>
-        <circle cx="60" cy="18" r="7.5" stroke="currentColor" stroke-width="2.5"/>
-        <circle cx="60" cy="18" r="3" fill="currentColor"/>
-        <circle cx="60" cy="62" r="7.5" stroke="currentColor" stroke-width="2.5"/>
-        <circle cx="60" cy="62" r="3" fill="currentColor"/>
-        <line x1="31.4" y1="33.7" x2="53.4" y2="21.6" stroke="currentColor" stroke-width="2" stroke-opacity="0.5"/>
-        <line x1="31.4" y1="46.3" x2="53.4" y2="58.4" stroke="currentColor" stroke-width="2" stroke-opacity="0.5"/>
-      </svg>
-      <span class="text-[11px] font-semibold tracking-[0.14em] text-gray-500 uppercase hidden sm:block select-none">Agent Link</span>
-      <div class="w-px h-4 bg-gray-800 mx-1 flex-shrink-0"></div>
-      <!-- Session state indicator -->
-      <div x-show="currentId" class="flex items-center gap-1.5 flex-shrink-0">
-        <span class="w-1.5 h-1.5 rounded-full flex-shrink-0"
-              :class="activeSet.has(currentId) ? 'bg-green-400 animate-pulse' : 'bg-gray-700'"></span>
-        <span class="text-[10px] font-mono tracking-[0.18em] uppercase"
-              :class="activeSet.has(currentId) ? 'text-green-500' : 'text-gray-600'"
-              x-text="activeSet.has(currentId) ? 'active' : 'idle'"></span>
-      </div>
-      <span class="flex-1 min-w-0"></span>
-      <!-- Session name + cost -->
-      <span x-show="currentId" class="text-gray-500 text-xs truncate max-w-[180px] flex-shrink min-w-0"
-            x-text="managed.find(s => s.sessionId === currentId)?.name || ''"></span>
-      <span x-show="totalCost > 0" class="text-gray-700 text-[11px] font-mono flex-shrink-0 ml-1">$<span x-text="totalCost.toFixed(4)"></span></span>
-      <div class="w-px h-4 bg-gray-800 mx-1 flex-shrink-0"></div>
-      <button @click="toggleTheme()" class="header-btn"
-              :title="theme === 'light' ? 'Switch to dark' : 'Switch to light'"
-              x-text="theme === 'light' ? '☼' : '☾'"></button>
-      <button @click="emit('config-toggle')" class="header-btn emoji-text" title="Agent config">⚙</button>
-    </div>
 
     <!-- Messages -->
     <div class="flex-1 relative overflow-hidden">
@@ -648,6 +652,8 @@
       </template>
     </div>
   </div>
+
+  </div><!-- /panel row -->
 
   </div>
   </template><!-- /main app template -->

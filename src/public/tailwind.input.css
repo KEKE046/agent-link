@@ -88,6 +88,10 @@
 .sidebar-btn:hover { background: #374151; color: #e5e7eb; }
 .sidebar-btn-danger:hover { background: transparent; color: #f87171; }
 
+/* Sidebar arrow rotation — explicit to survive Tailwind JIT scanning */
+.sidebar-arrow { transition: transform 150ms ease; }
+.sidebar-arrow.rotate-90 { transform: rotate(90deg); }
+
 /* Header buttons */
 .header-btn {
   width: 1.75rem; height: 1.75rem;
