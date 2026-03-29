@@ -9,8 +9,15 @@ function sidebar() {
     folderMenu: null,
     renamePopup: null,  // {cwd, nodeId, label}
     nodeMenu: null,     // nodeId or null
+    agentMenu: null,    // sessionId or null
+    confirmDialog: null, // {message, onConfirm}
     folderPopup: null,
     menuPos: { top: 0, left: 0 }, // fixed position for dropdown menus
+
+    // Top-level browse state — nested object mutations don't trigger x-for reactivity in Alpine
+    browseSessions: [],
+    browseLoading: false,
+    browseHasMore: false,
 
     // Add-agent dialog
     agentDialog: null,  // {nodeId, cwd, tab:'new'|'load', name, initialPrompt, configOpen, ...browseState}
@@ -34,11 +41,18 @@ function sidebar() {
       this.menuPos = { top: rect.bottom + 2, left: rect.right - 112 };
       if (menuType === 'folder') {
         this.folderMenu = this.folderMenu === key ? null : key;
-        this.nodeMenu = null;
+        this.nodeMenu = null; this.agentMenu = null;
+      } else if (menuType === 'agent') {
+        this.agentMenu = this.agentMenu === key ? null : key;
+        this.nodeMenu = null; this.folderMenu = null;
       } else {
         this.nodeMenu = this.nodeMenu === key ? null : key;
-        this.folderMenu = null;
+        this.folderMenu = null; this.agentMenu = null;
       }
+    },
+
+    confirmRemove(message, id, type) {
+      this.confirmDialog = { message, id, type };
     },
 
     toggleGroup(key) {
@@ -122,6 +136,20 @@ function sidebar() {
       return this.nodes.find(n => n.nodeId === nodeId)?.online ?? false;
     },
 
+    async approveNode(nodeId) {
+      try {
+        await fetch(`/api/nodes/${encodeURIComponent(nodeId)}/approve`, { method: 'POST' });
+        emit('data-refresh');
+      } catch {}
+    },
+
+    async removeNode(nodeId) {
+      try {
+        await fetch(`/api/nodes/${encodeURIComponent(nodeId)}`, { method: 'DELETE' });
+        emit('node-removed', nodeId);
+      } catch {}
+    },
+
     // --- Folder management ---
 
     isManagedFolder(cwd, nodeId) {
@@ -185,6 +213,9 @@ function sidebar() {
 
     openAgentDialog(nodeId, cwd) {
       this.nodeMenu = null;
+      this.browseSessions = [];
+      this.browseLoading = false;
+      this.browseHasMore = false;
       this.agentDialog = {
         nodeId: nodeId || '(local)',
         cwd: cwd || this.cwd,
@@ -204,14 +235,11 @@ function sidebar() {
         cfgShowSystemPrompt: false,
         cfgShowEnv: false,
         cfgShowJson: false,
-        // Browse state
-        browseSessions: [],
-        browseLoading: false,
+        // Browse state (sessions/loading/hasMore are top-level for Alpine reactivity)
         browseFilter: cwd || '',
         browseExact: !!cwd,
         browseLimit: 30,
         browseOffset: 0,
-        browseHasMore: false,
         browseSelected: null,
       };
     },
@@ -265,28 +293,53 @@ function sidebar() {
     },
 
     // Browse sessions for Load tab
+    renderSessionsHtml(sessions, loading, selected) {
+      if (loading) return '<div class="p-3 text-gray-500 text-xs text-center">Loading...</div>';
+      if (!sessions?.length) return '<div class="p-3 text-gray-600 text-xs text-center">No sessions found</div>';
+      const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      return sessions.map(s => {
+        const sel = selected === s.sessionId;
+        const cls = sel ? 'bg-blue-600/20 border-l-2 border-blue-400' : 'border-l-2 border-transparent';
+        const date = s.lastModified ? new Date(s.lastModified).toLocaleString() : '';
+        return `<div data-sid="${esc(s.sessionId)}" class="px-3 py-1.5 cursor-pointer hover:bg-gray-800/50 ${cls}">` +
+          `<div class="text-xs truncate">${esc(s.summary || s.sessionId.slice(0, 12))}</div>` +
+          `<div class="text-[10px] text-gray-600 mt-0.5 flex gap-3">` +
+          `<span class="truncate">${esc(s.cwd || '')}</span>` +
+          `<span class="flex-shrink-0">${esc(date)}</span></div></div>`;
+      }).join('');
+    },
+
+    handleSessionClick(event) {
+      const div = event.target.closest('[data-sid]');
+      if (!div || !this.agentDialog) return;
+      const sessionId = div.dataset.sid;
+      const s = this.browseSessions.find(s => s.sessionId === sessionId);
+      if (!s) return;
+      this.agentDialog.browseSelected = this.agentDialog.browseSelected === sessionId ? null : sessionId;
+      if (s.cwd) this.agentDialog.cwd = s.cwd;
+      if (!this.agentDialog.name && s.summary) this.agentDialog.name = s.summary.slice(0, 30);
+    },
+
     async fetchBrowseSessions(append = false) {
       const d = this.agentDialog;
       if (!d) return;
-      d.browseLoading = true;
+      this.browseLoading = true;
       try {
         const params = new URLSearchParams({ limit: String(d.browseLimit), offset: String(d.browseOffset) });
-        // Exact mode: pass cwd to API for server-side filtering
         if (d.browseFilter && d.browseExact) params.set('cwd', d.browseFilter);
         const data = await (await fetch(`/api/sessions?${params}`)).json();
         let filtered = Array.isArray(data) ? data : [];
-        // Contains mode: filter client-side by substring
         if (d.browseFilter && !d.browseExact) {
           const q = d.browseFilter.toLowerCase();
           filtered = filtered.filter(s => (s.cwd || '').toLowerCase().includes(q));
         }
-        d.browseHasMore = Array.isArray(data) && data.length >= d.browseLimit;
-        d.browseSessions = append ? [...d.browseSessions, ...filtered] : filtered;
+        this.browseHasMore = Array.isArray(data) && data.length >= d.browseLimit;
+        this.browseSessions = append ? [...this.browseSessions, ...filtered] : filtered;
       } catch {
-        if (!append) d.browseSessions = [];
-        d.browseHasMore = false;
+        if (!append) this.browseSessions = [];
+        this.browseHasMore = false;
       }
-      d.browseLoading = false;
+      this.browseLoading = false;
     },
 
     submitAgentDialog() {

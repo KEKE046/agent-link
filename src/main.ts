@@ -12,6 +12,7 @@ import { initAuth, verifyCookie, isEnabled as authEnabled } from "./auth";
 import { Router } from "./router";
 import { createApp } from "./routes";
 import { getActiveServerById } from "./vscode";
+import * as logger from "./logger";
 
 const args = process.argv.slice(2);
 
@@ -22,6 +23,7 @@ if (args.includes("--help") || args.includes("-h")) {
   --accept-nodes      Accept remote node connections via WebSocket
   --no-local          Don't run local Claude SDK (router-only, requires --accept-nodes)
   --connect-to <url>  Run as node, connect to remote panel
+                      Can combine with --accept-nodes to relay sub-nodes
   --name <name>       Node display name (default: machine ID)
   --token <value>     Admin token for panel auth (auto-generated if omitted)
   --no-auth           Disable auth even in panel mode (for testing)
@@ -35,27 +37,36 @@ const connectTo = getArg("--connect-to");
 const port = parseInt(getArg("--port") || "3456");
 const tokenArg = getArg("--token");
 const noAuth = args.includes("--no-auth");
+const debug = args.includes("--debug");
 
 function getArg(flag: string): string | undefined {
   const i = args.indexOf(flag);
   return i >= 0 ? args[i + 1] : undefined;
 }
 
-if (noLocal && !acceptNodes) {
-  console.error("Error: --no-local requires --accept-nodes");
+logger.initLogger({ debug });
+
+if (noLocal && !acceptNodes && !connectTo) {
+  logger.error("main", "--no-local requires --accept-nodes");
   process.exit(1);
 }
 
 if (connectTo) {
   // ---- Node-only mode ----
-  const machineId = getMachineId();
-  const label = getArg("--name") || Bun.env.NODE_LABEL || machineId;
-  console.log(`[node] Machine ID: ${machineId}`);
-  console.log(`[node] Name: ${label}`);
-  console.log(`[node] Connecting to: ${connectTo}`);
+  const nameArg = getArg("--name") || Bun.env.NODE_LABEL;
+  const machineId = nameArg ? `${getMachineId()}-${nameArg}` : getMachineId();
+  const label = nameArg || machineId;
+  logger.log("node", `Machine ID: ${machineId}`);
+  logger.log("node", `Name: ${label}`);
+  logger.log("node", `Connecting to: ${connectTo}`);
 
   const { connect } = await import("./node/connector");
   connect(connectTo, machineId, label);
+
+  if (acceptNodes) {
+    const { startRelay } = await import("./node/relay");
+    startRelay(connectTo, port);
+  }
 } else {
   // ---- Server mode ----
   const localId = noLocal ? null : getMachineId();
@@ -64,8 +75,8 @@ if (connectTo) {
   // Enable auth in panel mode (accept-nodes), unless --no-auth
   if (acceptNodes && !noAuth) {
     const token = initAuth(tokenArg);
-    console.log(`[server] Admin token: ${token}`);
-    console.log(`[server] Login URL: http://localhost:${port}/login?token=${token}`);
+    logger.log("server", `Admin token: ${token}`);
+    logger.log("server", `Login URL: http://localhost:${port}/login?token=${token}`);
   }
 
   // Conditionally load panel modules
@@ -83,15 +94,16 @@ if (connectTo) {
       clearEventBuffer: panelNodes.clearEventBuffer,
       approveNode: panelNodes.approveNode,
       renameNode: panelNodes.renameNode,
+      removeNode: panelNodes.removeNode,
     });
   }
 
   const app = createApp(router);
 
   const mode = noLocal ? "router-only" : acceptNodes ? "local + remote" : "standalone";
-  console.log(`[server] Mode: ${mode}`);
-  if (localId) console.log(`[server] Machine ID: ${localId}`);
-  console.log(`[server] Listening on port ${port}`);
+  logger.log("server", `Mode: ${mode}`);
+  if (localId) logger.log("server", `Machine ID: ${localId}`);
+  logger.log("server", `Listening on port ${port}`);
 
   // --- VSCode reverse proxy helpers ---
 

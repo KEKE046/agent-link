@@ -18,6 +18,7 @@ export interface RemoteProvider {
   }[];
   approveNode?(nodeId: string): boolean;
   renameNode?(nodeId: string, label: string): boolean;
+  removeNode?(nodeId: string): boolean;
 }
 
 export class Router {
@@ -99,6 +100,11 @@ export class Router {
   renameNode(nodeId: string, label: string): boolean {
     if (!this.remote) return false;
     return this.remote.renameNode?.(nodeId, label) ?? false;
+  }
+
+  removeNode(nodeId: string): boolean {
+    if (!this.remote) return false;
+    return this.remote.removeNode?.(nodeId) ?? false;
   }
 
   getAllActiveIds(): string[] {

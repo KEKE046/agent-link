@@ -102,7 +102,7 @@ function app() {
           this.panelMode = true;
           this.nodes = await res.json();
           if (!this.selectedNodeId && this.nodes.length > 0)
-            this.selectedNodeId = (this.nodes.find(n => n.online) || this.nodes[0]).nodeId;
+            this.selectedNodeId = (this.nodes.find(n => n.online && n.approved) || this.nodes.find(n => n.online) || this.nodes[0]).nodeId;
         }
       } catch { this.panelMode = false; }
     },
@@ -231,6 +231,22 @@ function app() {
         this.msg('clear');
         if (this.eventSource) this.eventSource.close();
       }
+    },
+
+    async removeNodeManaged(nodeId) {
+      // Remove all managed sessions and folders belonging to a deleted node
+      const toDelete = this.managed.filter(s => (s.nodeId || '') === nodeId);
+      await Promise.all(toDelete.map(s =>
+        fetch(`/api/managed/${encodeURIComponent(s.sessionId)}`, { method: 'DELETE' }).catch(() => {})
+      ));
+      this.managed = this.managed.filter(s => (s.nodeId || '') !== nodeId);
+      this.managedFolders = this.managedFolders.filter(f => (f.nodeId || '') !== nodeId);
+      if (this.currentId && toDelete.some(s => s.sessionId === this.currentId)) {
+        this.currentId = null;
+        this.msg('clear');
+        if (this.eventSource) this.eventSource.close();
+      }
+      this.refreshData();
     },
 
     async addFolder(detail) {

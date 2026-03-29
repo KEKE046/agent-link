@@ -1,5 +1,6 @@
 import type { NodeToPanel, PanelToNode } from "../protocol";
 import { load, save } from "../store";
+import * as logger from "../logger";
 
 type Listener = (msg: any) => void;
 
@@ -95,9 +96,11 @@ export function requestNode(
     return Promise.reject(new Error(`Node ${nodeId} is not online`));
   }
   const requestId = `r_${Date.now()}_${++reqCounter}`;
+  logger.debug("panel", `→ ${action} to ${nodeId} [${requestId}]`);
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       pendingRequests.delete(requestId);
+      logger.warn("panel", `Timeout: ${action} to ${nodeId} [${requestId}]`);
       reject(new Error(`Request ${action} to node ${nodeId} timed out`));
     }, timeoutMs);
     pendingRequests.set(requestId, { resolve, reject, timer });
@@ -219,6 +222,7 @@ export function registerNode(
     connectedAt: now, lastHeartbeat: now,
   });
 
+  logger.log("panel", `Node ${record.approved ? "registered" : "pending"}: ${nodeId} (${record.label})`);
   return { nodeId, approved: record.approved };
 }
 
@@ -233,6 +237,7 @@ export function approveNode(nodeId: string): boolean {
     node.approved = true;
     sendToNode(node, { type: "registered", nodeId });
   }
+  logger.log("panel", `Node approved: ${nodeId}`);
   return true;
 }
 
@@ -247,6 +252,20 @@ export function renameNode(nodeId: string, label: string): boolean {
   return true;
 }
 
+export function removeNode(nodeId: string): boolean {
+  const record = nodeRecords[nodeId];
+  if (!record) return false;
+  delete nodeRecords[nodeId];
+  persistNodeRecords();
+  const node = nodes.get(nodeId);
+  if (node) {
+    nodes.delete(nodeId);
+    if (node.ws.readyState !== WebSocket.CLOSED) node.ws.close();
+  }
+  logger.log("panel", `Node removed: ${nodeId}`);
+  return true;
+}
+
 export function markOffline(nodeId: string) {
   const node = nodes.get(nodeId);
   if (node) {
@@ -255,6 +274,7 @@ export function markOffline(nodeId: string) {
     node.vscodeServers = [];
     const record = nodeRecords[node.machineId];
     if (record) { record.lastSeen = Date.now(); persistNodeRecords(); }
+    logger.log("panel", `Node disconnected: ${nodeId}`);
   }
 }
 

@@ -3,6 +3,7 @@ import { dispatch } from "../dispatch";
 import * as sessions from "../sessions";
 import { listActiveServers } from "../vscode";
 import { handleTunnelRequest, handleTunnelWsOpen, handleTunnelWsData, handleTunnelWsClose } from "./tunnel";
+import * as logger from "../logger";
 
 let ws: WebSocket | null = null;
 let reconnectDelay = 1000;
@@ -29,10 +30,13 @@ function scheduleHeartbeat() {
 }
 
 async function handleRequest(msg: { requestId: string; action: string; params: any }) {
+  logger.debug("node", `← ${msg.action} [${msg.requestId}]`);
   try {
     const data = await dispatch(msg.action, msg.params);
+    logger.debug("node", `→ response [${msg.requestId}]`);
     send({ type: "response", requestId: msg.requestId, data });
   } catch (err: any) {
+    logger.error("node", `Error in ${msg.action} [${msg.requestId}]: ${err.message}`);
     send({ type: "error", requestId: msg.requestId, error: err.message });
   }
 }
@@ -43,10 +47,10 @@ function handleMessage(raw: string) {
 
   switch (msg.type) {
     case "registered":
-      console.log(`[node] Registered as ${msg.nodeId}`);
+      logger.log("node", `Registered as ${msg.nodeId}`);
       break;
     case "pending":
-      console.log("[node] Waiting for approval from panel...");
+      logger.log("node", "Waiting for approval from panel...");
       break;
     case "request":
       handleRequest(msg);
@@ -92,13 +96,13 @@ function setupEventForwarding() {
 
 export function connect(panelUrl: string, machineId: string, label: string) {
   const wsUrl = panelUrl.replace(/^http/, "ws") + "/ws/node";
-  console.log(`[node] Connecting to ${wsUrl}...`);
+  logger.log("node", `Connecting to ${wsUrl}...`);
 
   ws = new WebSocket(wsUrl);
 
   ws.addEventListener("open", () => {
     reconnectDelay = 1000;
-    console.log("[node] Connected to Panel");
+    logger.log("node", "Connected to panel");
     send({ type: "register", machineId, label });
     scheduleHeartbeat();
     setupEventForwarding();
@@ -113,7 +117,7 @@ export function connect(panelUrl: string, machineId: string, label: string) {
     if (eventForwardingTimer) clearInterval(eventForwardingTimer);
     for (const [, unsub] of forwarded) unsub();
     forwarded.clear();
-    console.log(`[node] Disconnected. Reconnecting in ${reconnectDelay}ms...`);
+    logger.warn("node", `Disconnected. Reconnecting in ${reconnectDelay}ms...`);
     setTimeout(() => {
       reconnectDelay = Math.min(reconnectDelay * 2, 60000);
       connect(panelUrl, machineId, label);
