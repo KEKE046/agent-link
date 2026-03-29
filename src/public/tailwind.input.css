@@ -89,8 +89,9 @@
 .sidebar-btn-danger:hover { background: transparent; color: #f87171; }
 
 /* Sidebar arrow rotation — explicit to survive Tailwind JIT scanning */
-.sidebar-arrow { transition: transform 150ms ease; }
-.sidebar-arrow.rotate-90 { transform: rotate(90deg); }
+.sidebar-arrow { transition: transform 150ms ease; display: inline-block; }
+.sidebar-arrow.is-open    { transform: rotate(90deg); }   /* tree expand: right → down */
+.sidebar-arrow.is-flipped { transform: rotate(180deg); }  /* sidebar toggle: right → left */
 
 /* Header buttons */
 .header-btn {
