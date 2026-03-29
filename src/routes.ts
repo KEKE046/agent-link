@@ -8,6 +8,7 @@ import {
   listFolders, addFolder, removeFolder, renameFolder,
 } from "./managed";
 import { verifyToken, verifyCookie, createSessionCookie, isEnabled as authEnabled } from "./auth";
+import { load as loadStore, save as saveStore } from "./store";
 import assets from "./assets";
 
 const isDev = Bun.env.NODE_ENV === "development";
@@ -22,8 +23,21 @@ function getNodeId(c: any): string | undefined {
   return c.req.query("nodeId") || c.req.header("x-node-id") || undefined;
 }
 
-export function createApp(router: Router): Hono {
+export function createApp(router: Router, initialLabel = ""): Hono {
+  // Load persisted label, falling back to startup label
+  let localLabel = loadStore<string>("local-label", "") || initialLabel;
   const app = new Hono();
+
+  app.get("/api/info", (c) => c.json({ localId: router.localId, localLabel }));
+
+  app.patch("/api/info/label", async (c) => {
+    const body = await c.req.json();
+    const label = typeof body?.label === "string" ? body.label.trim() : "";
+    if (!label) return c.json({ error: "label required" }, 400);
+    localLabel = label;
+    saveStore("local-label", label);
+    return c.json({ ok: true, localLabel });
+  });
 
   // --- Auth: GET ?token= auto-login (redirect to /) ---
 
@@ -200,11 +214,15 @@ export function createApp(router: Router): Hono {
     return c.json(router.getAllActiveIds());
   });
 
-  // --- Node APIs (only when accepting remote nodes) ---
+  // --- Node APIs ---
 
   app.get("/api/nodes", (c) => {
-    if (!router.hasRemote) return c.notFound();
-    return c.json(router.listNodes());
+    const nodes = router.listNodes();
+    if (localLabel && router.localId) {
+      const local = nodes.find((n: any) => n.nodeId === router.localId);
+      if (local) local.label = localLabel;
+    }
+    return c.json(nodes);
   });
 
   app.post("/api/nodes/:nodeId/approve", (c) => {
@@ -230,7 +248,10 @@ export function createApp(router: Router): Hono {
 
   // --- Managed sessions ---
 
-  app.get("/api/managed", (c) => c.json(listManaged()));
+  app.get("/api/managed", (c) => {
+    const lid = router.localId || "";
+    return c.json(listManaged().map(s => ({ ...s, nodeId: s.nodeId || lid })));
+  });
 
   app.post("/api/managed", async (c) => {
     const body = await c.req.json();
@@ -241,7 +262,7 @@ export function createApp(router: Router): Hono {
     return c.json(addManaged({
       id, name, cwd,
       bio: typeof body?.bio === "string" ? body.bio.trim() || undefined : undefined,
-      nodeId: typeof body?.nodeId === "string" ? body.nodeId : undefined,
+      nodeId: (typeof body?.nodeId === "string" && body.nodeId) ? body.nodeId : (router.localId || undefined),
       createdAt: typeof body?.createdAt === "number" ? body.createdAt : Date.now(),
       params: body?.params || undefined,
     }));

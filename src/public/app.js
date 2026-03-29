@@ -27,9 +27,10 @@ function app() {
     })(),
     theme: localStorage.getItem('agent-link:theme') === 'light' ? 'light' : 'dark',
 
-    // Panel mode
-    panelMode: false,
+    // Nodes
     nodes: [],
+    localId: '',
+    localLabel: '',
     selectedNodeId: localStorage.getItem('agent-link:nodeId') || '',
 
     // Auth state
@@ -44,9 +45,9 @@ function app() {
       this.applyTheme();
       this.checkAuth().then(() => {
         if (!this.authenticated) return;
-        this.detectPanelMode().then(() => { this.loadManaged(); this.loadFolders(); });
+        this.fetchNodes().then(() => { this.loadManaged(); this.loadFolders(); });
         this.refreshActive();
-        setInterval(() => { this.refreshActive(); if (this.panelMode) this.refreshNodes(); }, 5000);
+        setInterval(() => { this.refreshActive(); this.refreshNodes(); }, 5000);
       });
       this.$watch('cwd', (v) => localStorage.setItem('agent-link:cwd', v));
       this.$watch('model', (v) => localStorage.setItem('agent-link:model', v));
@@ -87,24 +88,42 @@ function app() {
         if (data.error) { this.loginError = data.error; return; }
         this.authenticated = true;
         this.loginToken = '';
-        this.detectPanelMode().then(() => { this.loadManaged(); this.loadFolders(); });
+        this.fetchNodes().then(() => { this.loadManaged(); this.loadFolders(); });
         this.refreshActive();
-        setInterval(() => { this.refreshActive(); if (this.panelMode) this.refreshNodes(); }, 5000);
+        setInterval(() => { this.refreshActive(); this.refreshNodes(); }, 5000);
       } catch (err) {
         this.loginError = err.message;
       }
     },
 
-    async detectPanelMode() {
+    async fetchNodes() {
       try {
-        const res = await fetch('/api/nodes');
-        if (res.ok) {
-          this.panelMode = true;
-          this.nodes = await res.json();
-          if (!this.selectedNodeId && this.nodes.length > 0)
-            this.selectedNodeId = (this.nodes.find(n => n.online && n.approved) || this.nodes.find(n => n.online) || this.nodes[0]).nodeId;
-        }
-      } catch { this.panelMode = false; }
+        const [nodesRes, info] = await Promise.all([
+          fetch('/api/nodes').then(r => r.json()),
+          fetch('/api/info').then(r => r.json()),
+        ]);
+        this.nodes = nodesRes || [];
+        this.localId = info?.localId || '';
+        this.localLabel = info?.localLabel || info?.localId || '';
+        if (!this.selectedNodeId && this.nodes.length > 0)
+          this.selectedNodeId = (this.nodes.find(n => n.online && n.approved) || this.nodes[0]).nodeId;
+      } catch {}
+    },
+
+    async renameNode(nodeId, label) {
+      if (nodeId === this.localId) {
+        await fetch('/api/info/label', {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ label }),
+        });
+        this.localLabel = label;
+      } else {
+        await fetch(`/api/nodes/${encodeURIComponent(nodeId)}/label`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ label }),
+        });
+        this.nodes = this.nodes.map(n => n.nodeId === nodeId ? { ...n, label } : n);
+      }
     },
 
     async loadManaged() {
@@ -199,7 +218,7 @@ function app() {
         const body = {
           prompt, cwd: cwd || this.cwd,
           model: claudeParams?.model || this.model,
-          nodeId: nodeId || (this.panelMode ? this.selectedNodeId : undefined),
+          nodeId: nodeId || this.selectedNodeId,
           claudeParams,
         };
         const res = await fetch('/api/query', {
@@ -238,12 +257,12 @@ function app() {
 
     async removeNodeManaged(nodeId) {
       // Remove all managed sessions and folders belonging to a deleted node
-      const toDelete = this.managed.filter(s => (s.nodeId || '') === nodeId);
+      const toDelete = this.managed.filter(s => s.nodeId === nodeId);
       await Promise.all(toDelete.map(s =>
         fetch(`/api/managed/${encodeURIComponent(s.sessionId)}`, { method: 'DELETE' }).catch(() => {})
       ));
-      this.managed = this.managed.filter(s => (s.nodeId || '') !== nodeId);
-      this.managedFolders = this.managedFolders.filter(f => (f.nodeId || '') !== nodeId);
+      this.managed = this.managed.filter(s => s.nodeId !== nodeId);
+      this.managedFolders = this.managedFolders.filter(f => f.nodeId !== nodeId);
       if (this.currentId && toDelete.some(s => s.sessionId === this.currentId)) {
         this.currentId = null;
         this.msg('clear');
@@ -307,7 +326,7 @@ function app() {
 
       try {
         const params = new URLSearchParams({ cwd: s?.cwd || this.cwd });
-        if (this.panelMode && s?.nodeId) params.set('nodeId', s.nodeId);
+        if (s?.nodeId) params.set('nodeId', s.nodeId);
         const res = await fetch(`/api/sessions/${id}/messages?${params}`);
         if (res.ok) {
           const msgs = (await res.json()) || [];
@@ -331,7 +350,7 @@ function app() {
           prompt, sessionId: this.currentId,
           cwd: s?.cwd || this.cwd,
           model: claudeParams?.model || this.model,
-          nodeId: s?.nodeId || (this.panelMode ? this.selectedNodeId : undefined),
+          nodeId: s?.nodeId || this.selectedNodeId,
           claudeParams,
         };
         const res = await fetch('/api/query', {
@@ -353,7 +372,7 @@ function app() {
       if (!this.currentId) return;
       const s = this.managed.find(s => s.sessionId === this.currentId);
       const headers = {};
-      if (this.panelMode && s?.nodeId) headers['x-node-id'] = s.nodeId;
+      if (s?.nodeId) headers['x-node-id'] = s.nodeId;
       try { await fetch(`/api/interrupt/${this.currentId}`, { method: 'POST', headers }); } catch {}
     },
 
@@ -362,7 +381,7 @@ function app() {
       const s = this.managed.find(s => s.sessionId === this.currentId);
       try {
         const headers = { 'Content-Type': 'application/json' };
-        if (this.panelMode && s?.nodeId) headers['x-node-id'] = s.nodeId;
+        if (s?.nodeId) headers['x-node-id'] = s.nodeId;
         await fetch(`/api/model/${this.currentId}`, { method: 'POST', headers, body: JSON.stringify({ model: this.model }) });
       } catch {}
     },

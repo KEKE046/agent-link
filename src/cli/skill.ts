@@ -51,13 +51,13 @@ agent-link send Logger "task started: refactor auth module" &
 
 \`\`\`
 ACT  NODE       NAME         BIO
-●    (local)    CodeHelper   Backend refactoring agent
+●    panel      CodeHelper   Backend refactoring agent
 ○    node-abc   Greeter
-○    (local)    Logger       Audit log writer
+○    panel      Logger       Audit log writer
 \`\`\`
 
 - \`●\` = active (processing); \`○\` = idle (ready for messages)
-- NODE = which machine; \`(local)\` = same machine as server
+- NODE = which machine (always shows the machine name, never a placeholder)
 - Only send to idle agents unless you intend to queue work
 
 ## Inspecting an Agent
@@ -69,7 +69,7 @@ agent-link inspect CodeHelper -n 0    # details only
 # Name:    CodeHelper
 # Bio:     Backend refactoring agent
 # Session: 46fdcf5b-...
-# Node:    (local)
+# Node:    panel
 # CWD:     /home/user/project
 # Active:  no
 # ── last message ────────────────────────
