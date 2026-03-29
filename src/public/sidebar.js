@@ -221,6 +221,7 @@ function sidebar() {
         cwd: cwd || this.cwd,
         tab: 'new',
         name: '',
+        bio: '',
         initialPrompt: '',
         configOpen: false,
         // Config fields
@@ -351,12 +352,12 @@ function sidebar() {
 
       if (d.tab === 'load' && d.browseSelected) {
         emit('agent-create', {
-          name: d.name.trim(), cwd: d.cwd, nodeId, params,
+          name: d.name.trim(), bio: d.bio.trim() || undefined, cwd: d.cwd, nodeId, params,
           loadSessionId: d.browseSelected,
         });
       } else {
         emit('agent-create', {
-          name: d.name.trim(), cwd: d.cwd, nodeId, params,
+          name: d.name.trim(), bio: d.bio.trim() || undefined, cwd: d.cwd, nodeId, params,
           initialPrompt: d.initialPrompt,
         });
       }

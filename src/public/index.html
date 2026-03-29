@@ -208,6 +208,11 @@
                 <input x-model="agentDialog.name" placeholder="e.g. Code Helper"
                        class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm mono outline-none focus:border-gray-500" autofocus />
               </div>
+              <div>
+                <label class="text-xs text-gray-400 block mb-1">Bio <span class="text-gray-600">(optional)</span></label>
+                <input x-model="agentDialog.bio" placeholder="Short description of this agent's role"
+                       class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm outline-none focus:border-gray-500" />
+              </div>
 
               <!-- Node / CWD -->
               <div class="flex gap-2">
@@ -488,7 +493,15 @@
           <div class="p-3 space-y-3 text-xs">
             <!-- Agent identity -->
             <div class="font-semibold text-gray-200 truncate" x-text="session.name"></div>
+            <div x-show="session.bio" class="text-gray-400 text-[11px] italic" x-text="session.bio"></div>
             <div class="text-gray-500 truncate text-[10px]" x-text="session.cwd"></div>
+
+            <!-- Bio -->
+            <div>
+              <label class="text-gray-500 block mb-1">Bio</label>
+              <input x-model="bio" @input="dirty = true" placeholder="Short description..."
+                     class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 outline-none text-xs" />
+            </div>
 
             <!-- Model -->
             <div>

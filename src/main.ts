@@ -1,11 +1,15 @@
 #!/usr/bin/env bun
 // Unified entry point for Agent Link.
 //
-// Modes:
-//   agent-link                           → standalone (local node + HTTP)
-//   agent-link --accept-nodes            → local node + HTTP + accept remote nodes
-//   agent-link --accept-nodes --no-local → pure router (no local SDK)
-//   agent-link --connect-to <url>        → node only (connect to remote panel)
+// Subcommands:
+//   agent-link server [opts]            → start web server (standalone or panel)
+//   agent-link node <url> [opts]        → connect to remote panel as a node
+//   agent-link status                   → show status of running server
+//   agent-link list                     → list managed agents
+//   agent-link inspect <name|id>...     → inspect agent details
+//   agent-link send <name|id> <message> → send message to an agent
+//
+// Legacy flags (no subcommand) are still supported for backward compatibility.
 
 import { getMachineId } from "./identity";
 import { initAuth, verifyCookie, isEnabled as authEnabled } from "./auth";
@@ -16,33 +20,94 @@ import * as logger from "./logger";
 
 const args = process.argv.slice(2);
 
-if (args.includes("--help") || args.includes("-h")) {
-  console.log(`Usage: agent-link [options]
+const SUBCOMMANDS = new Set(["server", "node", "status", "list", "inspect", "send", "help"]);
+const subcommand = SUBCOMMANDS.has(args[0]) ? args[0] : null;
+const subArgs = subcommand ? args.slice(1) : args;
 
-  --port <n>          HTTP port (default: 3456)
-  --accept-nodes      Accept remote node connections via WebSocket
-  --no-local          Don't run local Claude SDK (router-only, requires --accept-nodes)
-  --connect-to <url>  Run as node, connect to remote panel
-                      Can combine with --accept-nodes to relay sub-nodes
-  --name <name>       Node display name (default: machine ID)
-  --token <value>     Admin token for panel auth (auto-generated if omitted)
-  --no-auth           Disable auth even in panel mode (for testing)
-  --help              Show this help`);
+function getArg(a: string[], flag: string): string | undefined {
+  const i = a.indexOf(flag);
+  return i >= 0 ? a[i + 1] : undefined;
+}
+
+// --- Introspection commands ---
+
+if (subcommand === "status") {
+  const { runStatus } = await import("./cli/status");
+  await runStatus(subArgs);
   process.exit(0);
 }
 
-const acceptNodes = args.includes("--accept-nodes");
-const noLocal = args.includes("--no-local");
-const connectTo = getArg("--connect-to");
-const port = parseInt(getArg("--port") || "3456");
-const tokenArg = getArg("--token");
-const noAuth = args.includes("--no-auth");
-const debug = args.includes("--debug");
-
-function getArg(flag: string): string | undefined {
-  const i = args.indexOf(flag);
-  return i >= 0 ? args[i + 1] : undefined;
+if (subcommand === "list") {
+  const { runList } = await import("./cli/list");
+  await runList(subArgs);
+  process.exit(0);
 }
+
+if (subcommand === "inspect") {
+  const { runInspect } = await import("./cli/inspect");
+  await runInspect(subArgs);
+  process.exit(0);
+}
+
+if (subcommand === "send") {
+  const { runSend } = await import("./cli/send");
+  await runSend(subArgs);
+  process.exit(0);
+}
+
+// --- Help ---
+
+if (subcommand === "help" || subArgs.includes("--help") || subArgs.includes("-h")) {
+  console.log(`Usage:
+  agent-link server [options]               Start web server (local or panel)
+  agent-link node <url> [options]           Connect to a panel server as a node
+  agent-link status [--url <url>]           Show status of running server
+  agent-link list   [--url <url>]           List managed agents in a table
+  agent-link inspect <name|id>... [--url]   Inspect agent details
+  agent-link send <name|id> <msg> [--url]   Send message to an agent
+
+Server options:
+  --port <n>        HTTP port (default: 3456)
+  --bind <ip>       Bind IP address (default: 0.0.0.0)
+  --accept-nodes    Accept remote node connections via WebSocket
+  --no-local        Disable local Claude SDK (router-only, requires --accept-nodes)
+  --token <value>   Admin token for panel auth (auto-generated if omitted)
+  --no-auth         Disable auth (for testing)
+  --debug           Enable debug logging
+
+Node options:
+  --name <name>     Node display name (default: machine ID)
+  --bind <ip>       Bind IP (default: 127.0.0.1, or 0.0.0.0 when --accept-nodes)
+  --port <n>        Listen port (default: 3456)
+  --accept-nodes    Also accept sub-nodes (relay mode), serves on same port
+  --no-auth         Disable local API auth
+  --debug           Enable debug logging
+
+Shared options:
+  --url <url>       Server URL for introspection commands
+                    (default: http://localhost:3456, or AGENT_LINK_URL env)`);
+  process.exit(0);
+}
+
+// --- Determine mode: server or node ---
+
+// `agent-link node <url>` — positional URL or --connect-to (legacy)
+const isNodeSubcommand = subcommand === "node";
+const connectTo = isNodeSubcommand
+  ? (subArgs.find((a) => !a.startsWith("--") && a.startsWith("http")) || getArg(subArgs, "--connect-to"))
+  : getArg(subArgs, "--connect-to");
+
+const acceptNodes = subArgs.includes("--accept-nodes");
+const noLocal = subArgs.includes("--no-local");
+const port = parseInt(getArg(subArgs, "--port") || "3456");
+// In node mode: default bind 127.0.0.1 unless relay (--accept-nodes) → 0.0.0.0
+const defaultBind = isNodeSubcommand
+  ? (acceptNodes ? "0.0.0.0" : "127.0.0.1")
+  : "0.0.0.0";
+const bindHost = getArg(subArgs, "--bind") || defaultBind;
+const tokenArg = getArg(subArgs, "--token");
+const noAuth = subArgs.includes("--no-auth");
+const debug = subArgs.includes("--debug");
 
 logger.initLogger({ debug });
 
@@ -52,8 +117,8 @@ if (noLocal && !acceptNodes && !connectTo) {
 }
 
 if (connectTo) {
-  // ---- Node-only mode ----
-  const nameArg = getArg("--name") || Bun.env.NODE_LABEL;
+  // ---- Node mode ----
+  const nameArg = getArg(subArgs, "--name") || Bun.env.NODE_LABEL;
   const machineId = nameArg ? `${getMachineId()}-${nameArg}` : getMachineId();
   const label = nameArg || machineId;
   logger.log("node", `Machine ID: ${machineId}`);
@@ -63,23 +128,53 @@ if (connectTo) {
   const { connect } = await import("./node/connector");
   connect(connectTo, machineId, label);
 
-  if (acceptNodes) {
-    const { startRelay } = await import("./node/relay");
-    startRelay(connectTo, port);
+  // Local HTTP API server — also handles relay WS on /ws/node when --accept-nodes
+  const localRouter = new Router(machineId);
+  if (!noAuth) {
+    initAuth(tokenArg);
+    logger.log("node", `Local API token saved to store`);
   }
+  const localApp = createApp(localRouter);
+
+  let relayHandlers: ReturnType<typeof import("./node/relay")["createRelayHandlers"]> | null = null;
+  if (acceptNodes) {
+    const { createRelayHandlers } = await import("./node/relay");
+    relayHandlers = createRelayHandlers(connectTo);
+    logger.log("relay", `Relay enabled on port ${port}, forwarding to ${connectTo}`);
+  }
+
+  interface NodeSocketData { type: "relay"; upstream: WebSocket | null; buffer: (string | ArrayBuffer)[] }
+
+  Bun.serve<NodeSocketData>({
+    port,
+    hostname: bindHost,
+    idleTimeout: 120,
+    fetch(req: Request, server: any) {
+      if (relayHandlers && new URL(req.url).pathname === "/ws/node") {
+        if (server.upgrade(req, { data: { type: "relay", upstream: null, buffer: [] } }))
+          return undefined;
+        return new Response("WebSocket upgrade failed", { status: 500 });
+      }
+      return localApp.fetch(req);
+    },
+    websocket: {
+      open(ws: any) { relayHandlers?.onOpen(ws); },
+      message(ws: any, msg: string | Buffer) { relayHandlers?.onMessage(ws, msg); },
+      close(ws: any) { relayHandlers?.onClose(ws); },
+    },
+  });
+  logger.log("node", `Local API listening on ${bindHost}:${port}`);
 } else {
   // ---- Server mode ----
   const localId = noLocal ? null : getMachineId();
   const router = new Router(localId);
 
-  // Enable auth in panel mode (accept-nodes), unless --no-auth
   if (acceptNodes && !noAuth) {
     const token = initAuth(tokenArg);
     logger.log("server", `Admin token: ${token}`);
     logger.log("server", `Login URL: http://localhost:${port}/login?token=${token}`);
   }
 
-  // Conditionally load panel modules
   let panelNodes: typeof import("./panel/nodes") | null = null;
   let panelTunnel: typeof import("./panel/tunnel") | null = null;
 
@@ -103,7 +198,7 @@ if (connectTo) {
   const mode = noLocal ? "router-only" : acceptNodes ? "local + remote" : "standalone";
   logger.log("server", `Mode: ${mode}`);
   if (localId) logger.log("server", `Machine ID: ${localId}`);
-  logger.log("server", `Listening on port ${port}`);
+  logger.log("server", `Listening on ${bindHost}:${port}`);
 
   // --- VSCode reverse proxy helpers ---
 
@@ -143,23 +238,22 @@ if (connectTo) {
     tunnelId?: string;
     tunnelPath?: string;
     tunnelHeaders?: Record<string, string>;
-    target?: string;   // VSCode WS upstream target URL
+    target?: string;
     upstream?: WebSocket;
   }
 
   Bun.serve({
     port,
+    hostname: bindHost,
     idleTimeout: 120,
     fetch: async (req: Request, server: any) => {
       const url = new URL(req.url);
 
-      // Node WS connection endpoint
       if (acceptNodes && panelNodes && url.pathname === "/ws/node") {
         if (server.upgrade(req, { data: { type: "node" } satisfies SocketData })) return undefined;
         return new Response("WebSocket upgrade failed", { status: 500 });
       }
 
-      // VSCode reverse proxy (auth-protected when enabled)
       if (url.pathname.startsWith("/vscode/")) {
         if (authEnabled() && !(await verifyCookie(req.headers.get("cookie")))) {
           return new Response("Unauthorized", { status: 401 });
@@ -192,7 +286,6 @@ if (connectTo) {
         const data = ws.data as SocketData;
         if (data.type === "node" && panelNodes) {
           if (!data.nodeId) {
-            // First message: register
             try {
               const msg = JSON.parse(typeof message === "string" ? message : new TextDecoder().decode(message));
               if (msg.type === "register") {
@@ -231,7 +324,7 @@ if (connectTo) {
     },
   });
 
-  // --- VSCode proxy: standalone mode (/vscode/<id>/...) ---
+  // --- VSCode proxy: standalone mode ---
 
   async function handleVscodeStandalone(req: Request, server: any, url: URL): Promise<Response | undefined> {
     const id = url.pathname.split("/")[2] || "";
@@ -271,7 +364,7 @@ if (connectTo) {
     });
   }
 
-  // --- VSCode proxy: multi-node mode (/vscode/<nodeId>/<id>/...) ---
+  // --- VSCode proxy: multi-node mode ---
 
   async function handleVscodeMultiNode(
     req: Request, server: any, url: URL,
@@ -283,7 +376,6 @@ if (connectTo) {
     const nodeId = parts[2] || "";
 
     if (router.isLocal(nodeId)) {
-      // Local VSCode: rewrite path to strip nodeId segment
       const id = parts[3] || "";
       const active = getActiveServerById(id);
       if (!active) return new Response("VSCode server not found", { status: 404 });
@@ -322,7 +414,6 @@ if (connectTo) {
       });
     }
 
-    // Remote node: tunnel through WS
     const node = nodes.getNode(nodeId);
     if (!node || !node.online) return new Response("Node not found or offline", { status: 502 });
 

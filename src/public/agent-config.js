@@ -14,6 +14,7 @@ function agentConfig() {
     })(),
 
     // Graphical controls (synced with JSON)
+    bio: '',
     model: '',
     thinking: '',
     effort: '',
@@ -53,6 +54,7 @@ function agentConfig() {
 
     loadFromSession() {
       const p = this.params;
+      this.bio = this.session?.bio || '';
       this.model = p.model || '';
       this.thinking = typeof p.thinking === 'object' ? (p.thinking.type || '') : '';
       this.effort = p.effort || '';
@@ -149,14 +151,15 @@ function agentConfig() {
     async save() {
       if (!this.session) return;
       const params = { claude: this.buildParams() };
+      const bio = this.bio.trim();
       try {
         await fetch(`/api/managed/${encodeURIComponent(this.session.sessionId)}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ params }),
+          body: JSON.stringify({ params, bio: bio || '' }),
         });
-        // Update local state
         this.session.params = params;
+        if (bio) this.session.bio = bio; else delete this.session.bio;
         this.dirty = false;
         emit('config-save', { sessionId: this.session.sessionId, params });
       } catch {}

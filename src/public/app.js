@@ -113,6 +113,7 @@ function app() {
         if (res.ok) {
           this.managed = ((await res.json()) || []).map(item => ({
             sessionId: item.id, name: item.name || item.id?.slice(0, 12) || '',
+            bio: item.bio || undefined,
             cwd: item.cwd, nodeId: item.nodeId, createdAt: item.createdAt,
             params: item.params || {},
           }));
@@ -148,8 +149,9 @@ function app() {
         await fetch('/api/managed', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            id: item.sessionId, name: item.name, cwd: item.cwd || '',
-            nodeId: item.nodeId, createdAt: item.createdAt || Date.now(),
+            id: item.sessionId, name: item.name, bio: item.bio || undefined,
+            cwd: item.cwd || '', nodeId: item.nodeId,
+            createdAt: item.createdAt || Date.now(),
             params: item.params || {},
           }),
         });
@@ -169,7 +171,7 @@ function app() {
 
     // Called from the add-agent dialog with full agent info
     async createAgent(detail) {
-      const { name, cwd, nodeId, params, initialPrompt, loadSessionId } = detail;
+      const { name, bio, cwd, nodeId, params, initialPrompt, loadSessionId } = detail;
       if (!name) return;
 
       // Ensure folder is tracked
@@ -177,7 +179,7 @@ function app() {
 
       if (loadSessionId) {
         // Load existing session as agent
-        const entry = { sessionId: loadSessionId, name, cwd, nodeId, params: params || {} };
+        const entry = { sessionId: loadSessionId, name, bio, cwd, nodeId, params: params || {} };
         this.addManaged(entry);
         this.switchSession(loadSessionId);
         return;
@@ -191,7 +193,14 @@ function app() {
       this.newSession();
       this.msg('append', { type: 'user', message: { content: [{ type: 'text', text: prompt }] } });
 
-      const claudeParams = params?.claude || undefined;
+      // Build claudeParams, injecting AGENT_LINK_AGENT_NAME if not already set
+      let claudeParams = params?.claude ? { ...params.claude } : undefined;
+      if (name) {
+        claudeParams = claudeParams || {};
+        if (!claudeParams.env?.AGENT_LINK_AGENT_NAME) {
+          claudeParams.env = { AGENT_LINK_AGENT_NAME: name, ...(claudeParams.env || {}) };
+        }
+      }
       try {
         const body = {
           prompt, cwd: cwd || this.cwd,
@@ -207,7 +216,7 @@ function app() {
         if (data.error) { this.msg('append', { type: 'error', error: data.error }); return; }
 
         this.currentId = data.sessionId;
-        const entry = { sessionId: data.sessionId, name, cwd: cwd || this.cwd, nodeId, params: params || {} };
+        const entry = { sessionId: data.sessionId, name, bio, cwd: cwd || this.cwd, nodeId, params: params || {} };
         this.addManaged(entry);
         this.activeSet.add(this.currentId);
         this.syncActive();
@@ -322,7 +331,14 @@ function app() {
       this.msg('append', { type: 'user', message: { content: [{ type: 'text', text: prompt }] } });
 
       const s = this.managed.find(s => s.sessionId === this.currentId);
-      const claudeParams = s?.params?.claude || undefined;
+      let claudeParams = s?.params?.claude ? { ...s.params.claude } : undefined;
+      // Auto-inject agent name into env if not already set
+      if (s?.name) {
+        claudeParams = claudeParams || {};
+        if (!claudeParams.env?.AGENT_LINK_AGENT_NAME) {
+          claudeParams.env = { AGENT_LINK_AGENT_NAME: s.name, ...(claudeParams.env || {}) };
+        }
+      }
       try {
         const body = {
           prompt, sessionId: this.currentId,
