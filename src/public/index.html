@@ -109,8 +109,7 @@
   <!-- ═══ Left Sidebar ═══ -->
   <div x-data="sidebar()" class="flex flex-shrink-0">
     <div class="bg-gray-900 flex flex-col flex-shrink-0 overflow-hidden transition-[width] duration-200"
-         :style="`width: ${sidebarCollapsed ? 0 : sidebarWidth}px`"
-         :class="sidebarCollapsed ? '' : 'border-r border-gray-800'">
+         :style="`width: ${sidebarCollapsed ? 0 : sidebarWidth}px`">
       <div class="flex-1 overflow-y-auto">
         <template x-for="n in groupedSessions" :key="n.nodeId">
           <div>
