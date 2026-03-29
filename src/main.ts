@@ -20,7 +20,7 @@ import * as logger from "./logger";
 
 const args = process.argv.slice(2);
 
-const SUBCOMMANDS = new Set(["server", "node", "status", "list", "inspect", "send", "help"]);
+const SUBCOMMANDS = new Set(["server", "node", "status", "list", "inspect", "send", "skill", "help"]);
 const subcommand = SUBCOMMANDS.has(args[0]) ? args[0] : null;
 const subArgs = subcommand ? args.slice(1) : args;
 
@@ -30,6 +30,12 @@ function getArg(a: string[], flag: string): string | undefined {
 }
 
 // --- Introspection commands ---
+
+if (subcommand === "skill") {
+  const { runSkill } = await import("./cli/skill");
+  await runSkill(subArgs);
+  process.exit(0);
+}
 
 if (subcommand === "status") {
   const { runStatus } = await import("./cli/status");
@@ -65,6 +71,7 @@ if (subcommand === "help" || subArgs.includes("--help") || subArgs.includes("-h"
   agent-link list   [--url <url>]           List managed agents in a table
   agent-link inspect <name|id>... [--url]   Inspect agent details
   agent-link send <name|id> <msg> [--url]   Send message to an agent
+  agent-link skill                          Print agent-link skill/cheatsheet
 
 Server options:
   --port <n>        HTTP port (default: 3456)
