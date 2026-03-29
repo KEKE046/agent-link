@@ -113,6 +113,8 @@ function app() {
         if (res.ok) {
           this.managed = ((await res.json()) || []).map(item => ({
             sessionId: item.id, name: item.name || item.id?.slice(0, 12) || '',
+            bio: item.bio || undefined,
+            intro: item.intro || undefined,
             cwd: item.cwd, nodeId: item.nodeId, createdAt: item.createdAt,
             params: item.params || {},
           }));
@@ -148,8 +150,9 @@ function app() {
         await fetch('/api/managed', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            id: item.sessionId, name: item.name, cwd: item.cwd || '',
-            nodeId: item.nodeId, createdAt: item.createdAt || Date.now(),
+            id: item.sessionId, name: item.name, bio: item.bio || undefined,
+            cwd: item.cwd || '', nodeId: item.nodeId,
+            createdAt: item.createdAt || Date.now(),
             params: item.params || {},
           }),
         });
@@ -169,7 +172,7 @@ function app() {
 
     // Called from the add-agent dialog with full agent info
     async createAgent(detail) {
-      const { name, cwd, nodeId, params, initialPrompt, loadSessionId } = detail;
+      const { name, bio, cwd, nodeId, params, initialPrompt, loadSessionId } = detail;
       if (!name) return;
 
       // Ensure folder is tracked
@@ -177,7 +180,7 @@ function app() {
 
       if (loadSessionId) {
         // Load existing session as agent
-        const entry = { sessionId: loadSessionId, name, cwd, nodeId, params: params || {} };
+        const entry = { sessionId: loadSessionId, name, bio, cwd, nodeId, params: params || {} };
         this.addManaged(entry);
         this.switchSession(loadSessionId);
         return;
@@ -207,7 +210,7 @@ function app() {
         if (data.error) { this.msg('append', { type: 'error', error: data.error }); return; }
 
         this.currentId = data.sessionId;
-        const entry = { sessionId: data.sessionId, name, cwd: cwd || this.cwd, nodeId, params: params || {} };
+        const entry = { sessionId: data.sessionId, name, bio, cwd: cwd || this.cwd, nodeId, params: params || {} };
         this.addManaged(entry);
         this.activeSet.add(this.currentId);
         this.syncActive();

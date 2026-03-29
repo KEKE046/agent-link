@@ -255,8 +255,13 @@
               <!-- Agent name -->
               <div>
                 <label class="text-xs text-gray-400 block mb-1">Agent Name *</label>
-                <input x-model="agentDialog.name" placeholder="e.g. Code Helper"
+                <input x-model="agentDialog.name" @input="onNameBioChange()" placeholder="e.g. Code Helper"
                        class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm mono outline-none focus:border-gray-500" autofocus />
+              </div>
+              <div>
+                <label class="text-xs text-gray-400 block mb-1">Bio <span class="text-gray-600">(optional)</span></label>
+                <input x-model="agentDialog.bio" @input="onNameBioChange()" placeholder="Short description of this agent's role"
+                       class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm outline-none focus:border-gray-500" />
               </div>
 
               <!-- Node / CWD -->
@@ -289,9 +294,12 @@
 
               <!-- New tab -->
               <div x-show="agentDialog.tab === 'new'">
-                <label class="text-xs text-gray-400 block mb-1">Initial Prompt</label>
-                <textarea x-model="agentDialog.initialPrompt" rows="3"
-                          placeholder="hello"
+                <label class="text-xs text-gray-400 flex items-center gap-1.5 mb-1">
+                  Initial Prompt
+                  <button x-show="agentDialog.initialPromptDirty" @click.prevent="resetInitialPrompt()"
+                          class="text-gray-600 hover:text-gray-400 text-[10px]">↺ reset</button>
+                </label>
+                <textarea x-model="agentDialog.initialPrompt" @input="agentDialog.initialPromptDirty = true" rows="3"
                           class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm mono outline-none focus:border-gray-500 resize-y"></textarea>
               </div>
 
@@ -375,11 +383,15 @@
 
               <!-- System Prompt (collapsible) -->
               <div>
-                <button @click="agentDialog.cfgShowSystemPrompt = !agentDialog.cfgShowSystemPrompt" class="text-gray-400 hover:text-gray-200 flex items-center gap-1">
-                  <span x-text="agentDialog.cfgShowSystemPrompt ? '▾' : '▸'" class="w-3 text-gray-600"></span>System Prompt
-                </button>
+                <div class="flex items-center justify-between">
+                  <button @click="agentDialog.cfgShowSystemPrompt = !agentDialog.cfgShowSystemPrompt" class="text-gray-400 hover:text-gray-200 flex items-center gap-1">
+                    <span x-text="agentDialog.cfgShowSystemPrompt ? '▾' : '▸'" class="w-3 text-gray-600"></span>System Prompt
+                  </button>
+                  <button x-show="agentDialog.cfgSystemPromptDirty" @click="resetSystemPrompt()"
+                          class="text-gray-600 hover:text-gray-400 text-[10px]">↺ reset</button>
+                </div>
                 <div x-show="agentDialog.cfgShowSystemPrompt" class="mt-1">
-                  <textarea x-model="agentDialog.cfgSystemPrompt" rows="4" :placeholder="'Default: Your Name is ' + (agentDialog.name || '...')"
+                  <textarea x-model="agentDialog.cfgSystemPrompt" @input="agentDialog.cfgSystemPromptDirty = true" rows="4"
                             class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 outline-none text-xs resize-y"></textarea>
                 </div>
               </div>
@@ -556,7 +568,26 @@
           <div class="p-3 space-y-3 text-xs">
             <!-- Agent identity -->
             <div class="font-semibold text-gray-200 truncate" x-text="session.name"></div>
+            <div x-show="session.bio" class="text-gray-400 text-[11px] italic truncate" x-text="session.bio"></div>
             <div class="text-gray-500 truncate text-[10px]" x-text="session.cwd"></div>
+
+            <!-- Bio -->
+            <div>
+              <label class="text-gray-500 block mb-1">Bio</label>
+              <input x-model="bio" @input="dirty = true" placeholder="Short description..."
+                     class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 outline-none text-xs" />
+            </div>
+
+            <!-- Intro (collapsible) -->
+            <div>
+              <button @click="showIntro = !showIntro" class="text-gray-400 hover:text-gray-200 flex items-center gap-1">
+                <span x-text="showIntro ? '▾' : '▸'" class="w-3 text-gray-600"></span>Intro
+              </button>
+              <div x-show="showIntro" class="mt-1">
+                <textarea x-model="intro" @input="dirty = true" rows="3" placeholder="Self-introduction for other agents..."
+                          class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 outline-none text-xs resize-y"></textarea>
+              </div>
+            </div>
 
             <!-- Model -->
             <div>

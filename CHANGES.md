@@ -1,6 +1,30 @@
 # Agent Link - Changes
 
-## v0.9.0
+## v1.0.0
+
+- **CLI subcommands** — replaces flat flag style:
+  - `agent-link server [--port] [--bind] [--accept-nodes] [--no-local]` — start web server
+  - `agent-link node <url> [--name] [--port] [--bind] [--accept-nodes]` — connect to panel
+  - Legacy flags (`--connect-to`, no subcommand) still work for backward compatibility
+  - `--bind <ip>` added to server; node defaults to `127.0.0.1` (or `0.0.0.0` with `--accept-nodes`)
+- **Node local HTTP API** — `agent-link node` now starts a local HTTP API server alongside the panel WS connection
+  - Default: `127.0.0.1:3456`; switches to `0.0.0.0` when relay enabled
+  - Auth token auto-generated and saved to `$AGENT_LINK_HOME/auth.json`
+  - Relay (`--accept-nodes`) merged onto same port — no separate `--relay-port` needed
+- **CLI introspection commands** for agents and operators:
+  - `agent-link status` — server info, auth state, connected nodes, active sessions
+  - `agent-link list` — table of managed agents with active/node/name/bio columns
+  - `agent-link inspect <name|id>` — full agent details
+  - `agent-link send <name|id> <message>` — send message to agent, stream response
+  - All commands auto-read Bearer token from `$AGENT_LINK_HOME/auth.json`; override with `--url` or `AGENT_LINK_URL`
+- **Bearer token auth** — API middleware now accepts `Authorization: Bearer <token>` alongside cookie auth
+- **Agent bio** — optional short description field on managed sessions
+  - Set in create-agent dialog and right config panel
+  - Shown in `agent-link list` table and `agent-link inspect` output
+- **`AGENT_LINK_AGENT_NAME`** — auto-injected into Claude session env from the agent's name
+  - Enables agents to identify themselves; visible in `agent-link send` sender header
+
+
 
 - Unified backend: single entry point `src/main.ts` replaces 3 separate entry points
   - `agent-link` — standalone (local node + HTTP)
