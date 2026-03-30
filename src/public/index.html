@@ -294,9 +294,9 @@
             <!-- Header -->
             <div class="px-4 py-3 border-b border-gray-800 flex items-center gap-2">
               <span class="text-sm font-semibold text-gray-200 flex-1">Create Agent</span>
-              <button @click="agentDialog.configOpen = !agentDialog.configOpen"
+              <button @click="agentDialog.configOpen = !agentDialog.configOpen; localStorage.setItem('agent-link:agent-config-open', agentDialog.configOpen)"
                       :class="agentDialog.configOpen ? 'bg-gray-700 text-gray-200' : 'text-gray-500 hover:text-gray-300'"
-                      class="px-2 py-1 text-xs rounded hover:bg-gray-800" title="Toggle config">&#9881;</button>
+                      class="px-2 py-1 text-xs rounded hover:bg-gray-800 emoji-text" title="Toggle config">⚙</button>
               <button @click="agentDialog = null" class="px-2 py-1 text-gray-600 hover:text-gray-300 text-xs rounded hover:bg-gray-800">x</button>
             </div>
 
@@ -336,10 +336,10 @@
                 <button @click="agentDialog.tab = 'new'"
                         :class="agentDialog.tab === 'new' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'"
                         class="px-4 py-1.5 text-xs font-medium rounded">New</button>
-                <button @click="agentDialog.tab = 'load'; if (browseSessions.length === 0) fetchBrowseSessions()"
+                <button @click="agentDialog.tab = 'load'; agentDialog.browseExact = !!agentDialog.browseFilter; agentDialog.browseOffset = 0; fetchBrowseSessions()"
                         :class="agentDialog.tab === 'load' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'"
                         class="px-4 py-1.5 text-xs font-medium rounded">Load</button>
-                <button @click="agentDialog.tab = 'import'; if (browseSessions.length === 0) fetchBrowseSessions()"
+                <button @click="agentDialog.tab = 'import'; agentDialog.browseExact = false; agentDialog.browseOffset = 0; fetchBrowseSessions()"
                         :class="agentDialog.tab === 'import' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'"
                         class="px-4 py-1.5 text-xs font-medium rounded">Import</button>
               </div>

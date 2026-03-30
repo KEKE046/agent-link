@@ -272,7 +272,7 @@ function sidebar() {
         bio: '',
         initialPrompt: initPrompt,
         initialPromptDirty: false,
-        configOpen: false,
+        configOpen: localStorage.getItem('agent-link:agent-config-open') !== 'false',
         // Config fields
         cfgModel: '',
         cfgThinking: '',
