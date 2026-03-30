@@ -61,6 +61,11 @@ document.addEventListener('alpine:init', () => {
       case 'WebSearch': return 'tool-kind-web';
       case 'Agent':
       case 'Skill': return 'tool-kind-agent';
+      case 'TaskCreate':
+      case 'TaskUpdate':
+      case 'TaskGet':
+      case 'TaskList':
+      case 'TaskStop': return 'tool-kind-agent';
       default: return 'tool-kind-default';
     }
   }
@@ -107,6 +112,53 @@ document.addEventListener('alpine:init', () => {
     </details>`;
   }
 
+  // --- Background task rendering ---
+
+  function renderTaskStarted(msg) {
+    const desc = esc(msg.description || '');
+    const type = msg.task_type ? ` <span class="tool-meta">${esc(msg.task_type)}</span>` : '';
+    return `<div class="bg-task-card text-xs py-1.5 px-2.5 rounded my-1 border border-gray-700/50" data-task-id="${esc(msg.task_id)}">
+      <span class="text-blue-400 font-semibold">task started</span>${type}
+      <span class="text-gray-300 ml-1">${desc}</span>
+    </div>`;
+  }
+
+  function renderTaskProgress(msg) {
+    const summary = esc(msg.summary || msg.description || '');
+    const tool = msg.last_tool_name ? ` <span class="tool-meta">${esc(msg.last_tool_name)}</span>` : '';
+    const usage = msg.usage ? ` <span class="tool-meta">${msg.usage.tool_uses} tools, ${(msg.usage.duration_ms / 1000).toFixed(1)}s</span>` : '';
+    return `<div class="bg-task-card text-xs py-1.5 px-2.5 rounded my-1 border border-gray-700/50" data-task-id="${esc(msg.task_id)}">
+      <span class="text-yellow-400 font-semibold">task progress</span>${tool}${usage}
+      <span class="text-gray-400 ml-1">${summary}</span>
+    </div>`;
+  }
+
+  function renderTaskNotification(msg) {
+    const statusColors = { completed: 'text-green-400', failed: 'text-red-400', stopped: 'text-orange-400' };
+    const color = statusColors[msg.status] || 'text-gray-400';
+    const summary = esc(msg.summary || '');
+    const usage = msg.usage ? ` <span class="tool-meta">${msg.usage.total_tokens} tokens, ${msg.usage.tool_uses} tools, ${(msg.usage.duration_ms / 1000).toFixed(1)}s</span>` : '';
+    return `<details class="bg-task-card text-xs py-1.5 px-2.5 rounded my-1 border border-gray-700/50" data-task-id="${esc(msg.task_id)}">
+      <summary class="cursor-pointer select-none"><span class="${color} font-semibold">task ${esc(msg.status)}</span>${usage}</summary>
+      <div class="mt-1 text-gray-400 whitespace-pre-wrap">${summary}</div>
+    </details>`;
+  }
+
+  function renderSystemSubtype(msg) {
+    if (msg.subtype === 'task_started') return renderTaskStarted(msg);
+    if (msg.subtype === 'task_progress') return renderTaskProgress(msg);
+    if (msg.subtype === 'task_notification') return renderTaskNotification(msg);
+    if (msg.subtype === 'compact_boundary') {
+      const summary = msg.compact_metadata?.compact_summary;
+      if (!summary) return `<div class="text-gray-600 text-xs py-1 border-y border-gray-800/30 my-1">context compacted</div>`;
+      return `<details class="text-xs py-1 border-y border-gray-800/30 my-1">
+        <summary class="text-gray-600 cursor-pointer select-none">context compacted</summary>
+        <div class="text-gray-500 mt-1 whitespace-pre-wrap max-h-40 overflow-y-auto">${esc(summary)}</div>
+      </details>`;
+    }
+    return '';
+  }
+
   // --- Tool rendering ---
 
   function renderToolUse(name, input) {
@@ -143,6 +195,12 @@ document.addEventListener('alpine:init', () => {
       }
       case 'Skill':
         return `<span class="tool-kind ${toolKindClass(name)} font-semibold">Skill</span> <span class="tool-text">${e(input?.skill || '')}</span>${input?.args ? ` <span class="tool-meta">${e(input.args)}</span>` : ''}`;
+      case 'TaskCreate':
+        return `<span class="tool-kind ${toolKindClass(name)} font-semibold">TaskCreate</span> <span class="tool-text">${e(input?.subject || '')}</span>`;
+      case 'TaskUpdate':
+        return `<span class="tool-kind ${toolKindClass(name)} font-semibold">TaskUpdate</span> <span class="tool-text">${e(input?.taskId || '')}${input?.status ? ' → ' + e(input.status) : ''}</span>`;
+      case 'TaskStop':
+        return `<span class="tool-kind ${toolKindClass(name)} font-semibold">TaskStop</span> <span class="tool-text">${e(input?.taskId || '')}</span>`;
       default: {
         const sn = name?.includes('__') ? name.split('__').pop() : name;
         const s = JSON.stringify(input || {});
@@ -263,6 +321,13 @@ document.addEventListener('alpine:init', () => {
       } else if (msg.type === 'system' && msg.subtype === 'init') {
         flushProcess();
         html += `<div class="text-gray-600 text-xs py-1 border-b border-gray-800/50 mb-2">Session ${esc(msg.session_id?.slice(0, 8))} | model: ${esc(msg.model)} | cwd: ${esc(msg.cwd)} | tools: ${msg.tools?.length || 0}</div>`;
+      } else if (msg.type === 'system' && (msg.subtype === 'task_started' || msg.subtype === 'task_progress' || msg.subtype === 'task_notification' || msg.subtype === 'compact_boundary')) {
+        const taskHtml = renderSystemSubtype(msg);
+        if (taskHtml) {
+          // Task messages go inside the current process group
+          flushTools();
+          pendingProcess += taskHtml;
+        }
       } else if (msg.type === 'result') {
         flushProcess();
         const cls = msg.subtype === 'success' ? 'text-cyan-400/70' : 'text-red-400/70';
@@ -282,6 +347,9 @@ document.addEventListener('alpine:init', () => {
   function renderSingleMsg(msg) {
     if (msg.type === 'system' && msg.subtype === 'init') {
       return `<div class="text-gray-600 text-xs py-1 border-b border-gray-800/50 mb-2">Session ${esc(msg.session_id?.slice(0, 8))} | model: ${esc(msg.model)} | cwd: ${esc(msg.cwd)} | tools: ${msg.tools?.length || 0}</div>`;
+    }
+    if (msg.type === 'system') {
+      return renderSystemSubtype(msg);
     }
     if (msg.type === 'user') {
         const content = msg.message?.content;
@@ -390,7 +458,16 @@ document.addEventListener('alpine:init', () => {
       this.removeEmptyTrailingProcess();
       this.collapseProcessDetails();
       const html = renderSingleMsg(msg);
-      if (html) this.$refs.rendered.insertAdjacentHTML('beforeend', html);
+      if (html) {
+        // Task messages go inside the process container
+        if (msg.type === 'system' && (msg.subtype === 'task_started' || msg.subtype === 'task_progress' || msg.subtype === 'task_notification' || msg.subtype === 'compact_boundary')) {
+          const process = this.ensureProcessContainer(true);
+          const processBody = process.querySelector(':scope > div');
+          processBody.insertAdjacentHTML('beforeend', html);
+        } else {
+          this.$refs.rendered.insertAdjacentHTML('beforeend', html);
+        }
+      }
       this.scrollBottom();
     },
 

@@ -21,6 +21,13 @@ export async function dispatch(action: string, params: any): Promise<any> {
     case "interrupt":
       await sessions.interrupt(params.sessionId);
       return { ok: true };
+    case "stopTask":
+      await sessions.stopTask(params.sessionId, params.taskId);
+      return { ok: true };
+    case "getSessionCommands":
+      return sessions.getSessionCommands(params.sessionId);
+    case "getInitData":
+      return sessions.getInitData(params.sessionId);
     case "setModel":
       await sessions.setModel(params.sessionId, params.model);
       return { ok: true };

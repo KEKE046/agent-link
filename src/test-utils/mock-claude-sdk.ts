@@ -52,6 +52,17 @@ function createQueryFromMessages(
     async setModel(model: string) {
       controls.setModelCalls.push(model);
     },
+    async stopTask(_taskId: string) {
+      // no-op in mock
+    },
+    async supportedCommands() {
+      return [
+        { name: "compact", description: "Compact conversation history", argumentHint: "" },
+        { name: "clear", description: "Clear conversation", argumentHint: "" },
+        { name: "help", description: "Show help", argumentHint: "" },
+        { name: "model", description: "Switch model", argumentHint: "<model>" },
+      ];
+    },
     async *[Symbol.asyncIterator]() {
       try {
         for (const message of messages) {

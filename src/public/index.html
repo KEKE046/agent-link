@@ -610,9 +610,22 @@
 
     <!-- Input -->
     <div class="p-3 border-t border-gray-800 bg-gray-900/30 flex-shrink-0">
-      <div class="flex gap-2">
-        <input x-model="inputText" @keydown.enter.prevent="send()"
-               :placeholder="currentId ? 'Send a message...' : 'No agent selected'"
+      <div class="flex gap-2 relative">
+        <!-- Command completion dropdown -->
+        <template x-if="completions.length > 0">
+          <div class="completion-dropdown">
+            <template x-for="(c, i) in completions" :key="c.name">
+              <div class="completion-item" :class="{ active: i === completionIdx }"
+                   @mousedown.prevent="selectCompletion(i)" @mouseenter="completionIdx = i">
+                <span class="completion-name" x-text="'/' + c.name"></span>
+                <span class="completion-hint" x-show="c.argumentHint" x-text="c.argumentHint"></span>
+                <span class="completion-desc" x-show="c.description" x-text="c.description"></span>
+              </div>
+            </template>
+          </div>
+        </template>
+        <input x-model="inputText" @keydown="handleInputKeydown($event)"
+               :placeholder="currentId ? 'Send a message... (/ for commands)' : 'No agent selected'"
                :disabled="!currentId"
                class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm mono outline-none focus:border-gray-500 min-w-0 disabled:opacity-60" />
         <button @click="send()" :disabled="!inputText.trim() || !currentId"

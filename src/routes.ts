@@ -140,6 +140,42 @@ export function createApp(router: Router, initialLabel = ""): Hono {
     }
   });
 
+  app.post("/api/stop-task/:id", async (c) => {
+    const sessionId = c.req.param("id");
+    const body = await c.req.json();
+    const nodeId = getNodeId(c) || router.findNodeForSession(sessionId) || router.localId;
+    if (!nodeId) return c.json({ error: "node not found for session" }, 404);
+    try {
+      return c.json(await router.dispatch(nodeId, "stopTask", { sessionId, taskId: body.taskId }));
+    } catch (err: any) {
+      return c.json({ error: err.message }, 500);
+    }
+  });
+
+  app.get("/api/sessions/:id/commands", async (c) => {
+    const sessionId = c.req.param("id");
+    const nodeId = getNodeId(c) || router.findNodeForSession(sessionId) || router.localId;
+    if (!nodeId) return c.json({ error: "node not found for session" }, 404);
+    try {
+      const cmds = await router.dispatch(nodeId, "getSessionCommands", { sessionId });
+      return c.json(cmds || []);
+    } catch (err: any) {
+      return c.json({ error: err.message }, 500);
+    }
+  });
+
+  app.get("/api/sessions/:id/init", async (c) => {
+    const sessionId = c.req.param("id");
+    const nodeId = getNodeId(c) || router.findNodeForSession(sessionId) || router.localId;
+    if (!nodeId) return c.json({ error: "node not found for session" }, 404);
+    try {
+      const data = await router.dispatch(nodeId, "getInitData", { sessionId });
+      return c.json(data || {});
+    } catch (err: any) {
+      return c.json({ error: err.message }, 500);
+    }
+  });
+
   app.get("/api/events/:id", (c) => {
     const sessionId = c.req.param("id");
     return streamSSE(c, async (stream) => {
