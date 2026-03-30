@@ -283,7 +283,7 @@ function sidebar() {
         cfgEnvText: '',
         cfgJsonText: '{}',
         cfgJsonError: '',
-        cfgShowSystemPrompt: false,
+        cfgShowSystemPrompt: true,
         cfgShowEnv: false,
         cfgShowJson: false,
         // Browse state (sessions/loading/hasMore are top-level for Alpine reactivity)

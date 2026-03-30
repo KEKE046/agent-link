@@ -67,13 +67,23 @@ describe("forkSession", () => {
       expect(contentLines[i]).toContain(destCwd);
     }
 
-    // Check fork notice was appended
+    // Check fork notice was appended with correct structure
     const lastLine = JSON.parse(contentLines[contentLines.length - 1]);
     expect(lastLine.type).toBe("user");
-    expect(lastLine.message.content[0].text).toContain("Session forked");
-    expect(lastLine.message.content[0].text).toContain(srcCwd);
-    expect(lastLine.message.content[0].text).toContain(destCwd);
+    expect(lastLine.isSidechain).toBe(false);
+    expect(lastLine.message.role).toBe("user");
+    expect(lastLine.message.content).toHaveLength(1);
+    expect(lastLine.message.content[0].type).toBe("text");
+    // Verify the notice tells the model about the directory change
+    const noticeText = lastLine.message.content[0].text;
+    expect(noticeText).toContain("Session forked");
+    expect(noticeText).toContain("Working directory changed");
+    expect(noticeText).toContain(srcCwd);
+    expect(noticeText).toContain(destCwd);
+    // Must have a valid UUID and sessionId
     expect(lastLine.uuid).toBeTruthy();
+    expect(lastLine.sessionId).toBe(sessionId);
+    expect(lastLine.timestamp).toBeTruthy();
   });
 
   test("throws if source session not found", () => {
