@@ -27,6 +27,7 @@
   <script src="/app.js"></script>
   <script src="/sidebar.js"></script>
   <script src="/agent-config.js"></script>
+  <script src="/vscode-ui.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
 </head>
 <body class="bg-gray-950 text-gray-100 h-screen overflow-hidden">
@@ -41,7 +42,8 @@
      @folder-rename.window="renameFolder($event.detail)"
      @config-save.window="onConfigSave($event.detail)"
      @data-refresh.window="refreshData()"
-     @node-removed.window="removeNodeManaged($event.detail)">
+     @node-removed.window="removeNodeManaged($event.detail)"
+     @vscode-stop.window="stopVscode($event.detail)">
 
   <!-- Login screen -->
   <template x-if="authRequired && !authenticated">
@@ -219,6 +221,18 @@
                 class="w-full text-left px-3 py-1 text-xs text-gray-300 hover:bg-gray-700">Add Agent</button>
         <button @click.stop="openRenamePopup(folderMenu.split(':').slice(1).join(':'), folderMenu.split(':')[0]); folderMenu = null"
                 class="w-full text-left px-3 py-1 text-xs text-gray-300 hover:bg-gray-700">Rename</button>
+        <div class="border-t border-gray-700 my-0.5"></div>
+        <button x-show="!vscodeActive[folderMenu]"
+                @click.stop="emit('vscode-open', {cwd: folderMenu.split(':').slice(1).join(':'), nodeId: folderMenu.split(':')[0]}); folderMenu = null"
+                class="w-full text-left px-3 py-1 text-xs text-gray-300 hover:bg-gray-700">Start VS Code</button>
+        <a x-show="vscodeActive[folderMenu]"
+           :href="vscodeActive[folderMenu]?.nodeId ? '/vscode/' + vscodeActive[folderMenu].nodeId + '/' + vscodeActive[folderMenu].id + '/' : '/vscode/' + (vscodeActive[folderMenu]?.id || '') + '/'"
+           target="_blank" @click="folderMenu = null"
+           class="block w-full text-left px-3 py-1 text-xs text-blue-400 hover:bg-gray-700">Open VS Code</a>
+        <button x-show="vscodeActive[folderMenu]"
+                @click.stop="emit('vscode-stop', {cwd: folderMenu.split(':').slice(1).join(':'), nodeId: folderMenu.split(':')[0]}); folderMenu = null"
+                class="w-full text-left px-3 py-1 text-xs text-gray-300 hover:bg-gray-700">Stop VS Code</button>
+        <div class="border-t border-gray-700 my-0.5"></div>
         <button @click.stop="emit('folder-remove', {cwd: folderMenu.split(':').slice(1).join(':'), nodeId: folderMenu.split(':')[0]}); folderMenu = null"
                 class="w-full text-left px-3 py-1 text-xs text-gray-300 hover:bg-gray-700">Remove</button>
       </div>
@@ -706,6 +720,106 @@
   </div>
 
   </div><!-- /panel row -->
+
+  <!-- ═══ VS Code Modal ═══ -->
+  <div x-data="vscodeUi()" x-cloak>
+    <template x-if="show">
+      <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50" @click.self="show = false" @keydown.escape.window="show = false">
+        <div class="bg-gray-900 border border-gray-700 rounded-lg flex flex-col" style="width:480px; max-width:90vw; max-height:80vh">
+          <!-- Header -->
+          <div class="px-4 py-3 border-b border-gray-800 flex items-center">
+            <span class="text-sm font-semibold text-gray-200 flex-1">VS Code Server</span>
+            <button @click="show = false" class="px-2 py-1 text-gray-600 hover:text-gray-300 text-xs rounded hover:bg-gray-800">x</button>
+          </div>
+
+          <div class="p-4 flex flex-col gap-3 overflow-y-auto">
+            <!-- CWD display -->
+            <div class="text-xs text-gray-500 truncate mono" x-text="targetCwd"></div>
+
+            <!-- Tabs -->
+            <div class="flex gap-1">
+              <button @click="tab = 'start'"
+                      :class="tab === 'start' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'"
+                      class="px-4 py-1.5 text-xs font-medium rounded">Start</button>
+              <button @click="tab = 'install'; if (!install) fetchInstallInfo()"
+                      :class="tab === 'install' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'"
+                      class="px-4 py-1.5 text-xs font-medium rounded">Install</button>
+            </div>
+
+            <!-- Loading -->
+            <div x-show="loading" class="text-xs text-gray-500 text-center py-4">Loading...</div>
+
+            <!-- Start tab -->
+            <div x-show="tab === 'start' && !loading" class="space-y-3">
+              <template x-if="versions.length > 0">
+                <div class="space-y-3">
+                  <div>
+                    <label class="text-xs text-gray-400 block mb-1">Installed Versions</label>
+                    <select x-model="selectedCommit" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm mono outline-none">
+                      <template x-for="v in versions" :key="v.commit">
+                        <option :value="v.commit" x-text="v.version + ' (' + v.commit.slice(0,8) + ')'"></option>
+                      </template>
+                    </select>
+                  </div>
+                  <template x-if="!startedUrl || startedUrl === '#'">
+                    <button @click="start()" :disabled="!selectedCommit || loading"
+                            class="w-full px-3 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 rounded text-sm">Start Server</button>
+                  </template>
+                  <template x-if="startedUrl && startedUrl !== '#'">
+                    <a :href="startedUrl" target="_blank"
+                       class="block w-full px-3 py-2 rounded text-sm text-center text-white"
+                       style="background-color: #16a34a;">Open VS Code</a>
+                  </template>
+                </div>
+              </template>
+              <template x-if="versions.length === 0">
+                <div class="text-xs text-gray-500 text-center py-2">
+                  No VS Code Server installed. Use the <button @click="tab = 'install'; if (!install) fetchInstallInfo()" class="text-blue-400 underline">Install</button> tab.
+                </div>
+              </template>
+            </div>
+
+            <!-- Install tab -->
+            <div x-show="tab === 'install' && !loading" class="space-y-3">
+              <div>
+                <label class="text-xs text-gray-400 block mb-1">VS Code Version</label>
+                <input x-model="installVersion" @input.debounce.500ms="fetchInstallInfo()" placeholder="1.112.0"
+                       class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm mono outline-none focus:border-gray-500" />
+              </div>
+
+              <template x-if="install">
+                <div class="space-y-3">
+                  <!-- Agent prompt -->
+                  <div>
+                    <div class="flex items-center justify-between mb-1">
+                      <label class="text-xs text-gray-400">Agent Prompt</label>
+                      <button @click="navigator.clipboard.writeText(install.prompt).then(() => { $el.textContent = 'Copied!'; setTimeout(() => $el.textContent = 'Copy', 1500) })"
+                              class="px-2 py-0.5 text-[11px] bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-gray-400 hover:text-gray-200 cursor-pointer">Copy</button>
+                    </div>
+                    <textarea readonly rows="6" x-text="install.prompt"
+                              class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-300 mono outline-none resize-none cursor-text"></textarea>
+                    <div class="text-[10px] text-gray-600 mt-0.5">Copy and send to an agent to install VS Code Server.</div>
+                  </div>
+
+                  <!-- Shell command -->
+                  <div>
+                    <div class="flex items-center justify-between mb-1">
+                      <label class="text-xs text-gray-400">Shell Command</label>
+                      <button @click="navigator.clipboard.writeText(install.command).then(() => { $el.textContent = 'Copied!'; setTimeout(() => $el.textContent = 'Copy', 1500) })"
+                              class="px-2 py-0.5 text-[11px] bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-gray-400 hover:text-gray-200 cursor-pointer">Copy</button>
+                    </div>
+                    <textarea readonly rows="4" x-text="install.command"
+                              class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-300 mono outline-none resize-none cursor-text"></textarea>
+                    <div class="text-[10px] text-gray-600 mt-0.5">Or run directly in a terminal on the target machine.</div>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+  </div>
 
   </div>
   </template><!-- /main app template -->

@@ -31,7 +31,7 @@ export async function dispatch(action: string, params: any): Promise<any> {
     case "listVscodeVersions":
       return listInstalledVersions();
     case "startVscodeServer":
-      return startVscodeServer(params.cwd, params.commit);
+      return startVscodeServer(params.cwd, params.commit, params.nodeId);
     case "stopVscodeServer":
       return { ok: await stopVscodeServer(params.cwd) };
     case "getInstallCommand":

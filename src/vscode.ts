@@ -4,7 +4,6 @@ import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import installVscodeServerScript from "./install-vscode-server.sh" with { type: "text" };
 
 interface ActiveVscodeServer {
   cwd: string;
@@ -42,8 +41,8 @@ function getBinaryPath(commit: string): string {
   return join(vscodeRoot, `code-${commit}`);
 }
 
-function getServerBasePath(id: string): string {
-  return `/vscode/${id}`;
+function getServerBasePath(nodeId: string, id: string): string {
+  return `/vscode/${nodeId}/${id}`;
 }
 
 function cleanup(active: ActiveVscodeServer) {
@@ -129,10 +128,12 @@ function parsePort(line: string): number | null {
 
 export async function startVscodeServer(
   cwd: string,
-  commit: string
+  commit: string,
+  nodeId: string,
 ): Promise<VscodeServerSummary> {
   if (!cwd) throw new Error("cwd is required");
   if (!commit) throw new Error("commit is required");
+  if (!nodeId) throw new Error("nodeId is required");
   if (!/^[a-f0-9]{7,40}$/i.test(commit)) {
     throw new Error("commit must be a 7-40 char hex hash");
   }
@@ -172,7 +173,7 @@ export async function startVscodeServer(
   }
 
   const id = getId(cwd);
-  const basePath = getServerBasePath(id);
+  const basePath = getServerBasePath(nodeId, id);
   const proc = spawn(
     binaryPath,
     [
@@ -238,29 +239,25 @@ export async function startVscodeServer(
  */
 export function getInstallCommand(version?: string) {
   const resolvedVersion = version || "1.112.0";
-  const installScript = installVscodeServerScript.trim();
   const scriptPath = "~/.agent-link/scripts/install-vscode-server.sh";
-  const command = `mkdir -p ~/.agent-link/scripts && cat > ~/.agent-link/scripts/install-vscode-server.sh <<'EOF'
-${installScript}
-EOF
-chmod +x ~/.agent-link/scripts/install-vscode-server.sh
-~/.agent-link/scripts/install-vscode-server.sh ${resolvedVersion}`;
+  const command = `mkdir -p ~/.agent-link/scripts
+agent-link skill --vscode-install > ${scriptPath}
+chmod +x ${scriptPath}
+${scriptPath} ${resolvedVersion}`;
 
   const prompt = [
-    "请帮我在这台机器安装 VSCode Server：",
-    "1) 创建目录 ~/.agent-link/scripts",
-    "2) 写入 ~/.agent-link/scripts/install-vscode-server.sh，内容使用下面给出的完整脚本",
-    "3) chmod +x ~/.agent-link/scripts/install-vscode-server.sh",
-    `4) 执行 ~/.agent-link/scripts/install-vscode-server.sh ${resolvedVersion}`,
+    `请帮我在这台机器安装 VSCode Server ${resolvedVersion}：`,
+    "1) 运行 `agent-link skill --vscode-install` 获取安装脚本",
+    `2) 将输出保存到 ${scriptPath}`,
+    `3) chmod +x ${scriptPath}`,
+    `4) 执行 ${scriptPath} ${resolvedVersion}`,
     "5) 完成后返回已安装 commit hash 和 version 对应关系",
   ].join("\n");
 
   return {
     scriptPath,
-    script: installScript,
     command,
     prompt,
     version: resolvedVersion,
-    note: "Copy the prompt to an Agent Link session to install automatically, or copy the command directly in shell.",
   };
 }
