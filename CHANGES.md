@@ -1,5 +1,24 @@
 # Agent Link - Changes
 
+## v1.3.0
+
+- **Folder duplication** — copy a managed folder and all its files via `POST /api/copy/start`
+  - Persistent task tracking: `copying → done | failed`, with crash recovery on restart
+  - Auto-incremented destination naming (`.1`, `.2`, ...)
+  - "Duplicate" in folder context menu with pre-filled destination popup
+  - Copying folders show spinner instead of arrow, no actions allowed until done
+  - Failed copies show red indicator and "Delete Failed Copy" menu option
+- **Session fork/import** — fork an existing Claude session into a new working directory
+  - "Import" tab in Add Agent dialog: browse all sessions, fork to current folder
+  - Generates new sessionId, appends fork notice so the model knows the directory changed
+  - `POST /api/fork` endpoint with multi-node dispatch support
+- **WebSocket encryption** — end-to-end AES-256-GCM encryption for panel↔node connections
+  - Key derived from node connection token via HKDF-SHA256
+  - All WS messages encrypted/decrypted transparently
+- **VS Code multi-node proxy** — unified path `/vscode/{nodeId}/{hash}` for cross-node VS Code tunnels
+- **E2E test suite** — Playwright-based tests covering core flows, interactions, config, auth, multi-node, and folder copy
+- **UI polish** — config panel defaults open with localStorage persistence, system prompt visible by default, gear icon unified
+
 ## v1.0.0
 
 - **CLI subcommands** — replaces flat flag style:
