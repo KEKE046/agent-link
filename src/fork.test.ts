@@ -64,7 +64,7 @@ describe("forkSession", () => {
     // Old sessionId filename should NOT exist in dest
     expect(existsSync(join(destDir, `${origSessionId}.jsonl`))).toBe(false);
 
-    // Check sessionId was rewritten but paths are preserved (not rewritten)
+    // Check sessionId was rewritten but original paths are preserved
     const content = readFileSync(destFile, "utf-8");
     const contentLines = content.trim().split("\n");
     for (let i = 0; i < contentLines.length - 1; i++) {
@@ -74,6 +74,9 @@ describe("forkSession", () => {
       expect(contentLines[i]).not.toContain(origSessionId);
       expect(contentLines[i]).toContain(result.sessionId);
     }
+    // File should contain both srcCwd and destCwd (notice has both)
+    expect(content).toContain(srcCwd);
+    expect(content).toContain(destCwd);
 
     // Check fork notice was appended with correct structure
     const lastLine = JSON.parse(contentLines[contentLines.length - 1]);
