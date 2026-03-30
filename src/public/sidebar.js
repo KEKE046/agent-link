@@ -402,7 +402,8 @@ function sidebar() {
       const s = this.browseSessions.find(s => s.sessionId === sessionId);
       if (!s) return;
       this.agentDialog.browseSelected = this.agentDialog.browseSelected === sessionId ? null : sessionId;
-      if (s.cwd) this.agentDialog.cwd = s.cwd;
+      // For Load tab, update cwd to match selected session; for Import tab, keep dest cwd unchanged
+      if (this.agentDialog.tab !== 'import' && s.cwd) this.agentDialog.cwd = s.cwd;
       if (!this.agentDialog.name && s.summary) this.agentDialog.name = s.summary.slice(0, 30);
     },
 

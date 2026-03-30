@@ -1,5 +1,5 @@
 // Session fork — copy a Claude SDK session JSONL from one cwd to another,
-// rewriting paths and appending a fork notice so the model is aware.
+// rewriting paths and sessionId, appending a fork notice so the model is aware.
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
@@ -22,8 +22,9 @@ export interface ForkResult {
 }
 
 /**
- * Fork a session: copy JSONL from srcCwd to destCwd, rewrite paths, append fork notice.
- * Returns the session ID (same ID, new cwd location).
+ * Fork a session: copy JSONL from srcCwd to destCwd with a new sessionId,
+ * rewrite paths and old sessionId references, append fork notice.
+ * Returns the NEW session ID.
  */
 export function forkSession(sessionId: string, srcCwd: string, destCwd: string): ForkResult {
   const srcDir = join(PROJECTS, encodeCwd(srcCwd));
@@ -34,9 +35,12 @@ export function forkSession(sessionId: string, srcCwd: string, destCwd: string):
     throw new Error(`Session file not found: ${srcFile}`);
   }
 
-  // Read and rewrite paths
+  const newSessionId = crypto.randomUUID();
+
+  // Read and rewrite paths + sessionId
   let content = readFileSync(srcFile, "utf-8");
   content = content.replaceAll(srcCwd, destCwd);
+  content = content.replaceAll(sessionId, newSessionId);
 
   // Append fork notice so the model knows about the directory change
   const notice = JSON.stringify({
@@ -52,13 +56,13 @@ export function forkSession(sessionId: string, srcCwd: string, destCwd: string):
     },
     uuid: crypto.randomUUID(),
     timestamp: new Date().toISOString(),
-    sessionId,
+    sessionId: newSessionId,
   });
   content = content.trimEnd() + "\n" + notice + "\n";
 
-  // Write to destination
+  // Write to destination with new sessionId as filename
   mkdirSync(destDir, { recursive: true });
-  writeFileSync(join(destDir, `${sessionId}.jsonl`), content);
+  writeFileSync(join(destDir, `${newSessionId}.jsonl`), content);
 
-  return { sessionId, srcCwd, destCwd, srcDir, destDir };
+  return { sessionId: newSessionId, srcCwd, destCwd, srcDir, destDir };
 }

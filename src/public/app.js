@@ -236,7 +236,7 @@ function app() {
       }
 
       if (importSessionId && importSrcCwd) {
-        // Fork/import: copy session JSONL to new cwd
+        // Fork/import: copy session JSONL to new cwd with new sessionId
         try {
           const res = await fetch('/api/fork', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -245,9 +245,10 @@ function app() {
           const data = await res.json();
           if (data.error) { this.msg('append', { type: 'error', error: data.error }); return; }
 
-          const entry = { sessionId: importSessionId, name, bio, cwd, nodeId, params: params || {} };
+          const newSid = data.sessionId;
+          const entry = { sessionId: newSid, name, bio, cwd, nodeId, params: params || {} };
           this.addManaged(entry);
-          this.switchSession(importSessionId);
+          this.switchSession(newSid);
         } catch (err) {
           this.msg('append', { type: 'error', error: err.message });
         }
