@@ -1,7 +1,8 @@
 // Multi-node test helpers — spawn real CLI processes for panel/node/relay.
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 export interface ProcessContext {
   proc: ChildProcess;
@@ -9,6 +10,7 @@ export interface ProcessContext {
   url: string;
   tmpDir: string;
   output: string[];
+  token?: string;
 }
 
 /** Find a free port by briefly binding to port 0. */
@@ -43,27 +45,30 @@ function waitForReady(ctx: ProcessContext, marker: string, timeoutMs = 15000): P
   });
 }
 
+const TEST_TOKEN = "test-link-secret";
+
 /** Spawn a panel server (--accept-nodes --no-auth). */
 export async function spawnPanel(): Promise<ProcessContext> {
   const port = await getFreePort();
   const tmpDir = `/tmp/al-test-panel-${port}`;
   mkdirSync(tmpDir, { recursive: true });
-  const proc = spawn("bun", ["run", "src/cli.ts", "server", "--accept-nodes", "--no-auth", "--port", String(port)], {
+  const proc = spawn("bun", ["run", "src/cli.ts", "server", "--accept-nodes", "--no-auth", "--port", String(port), "--token", TEST_TOKEN], {
     cwd: process.cwd(),
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, AGENT_LINK_HOME: tmpDir, NODE_ENV: "test" },
   });
-  const ctx: ProcessContext = { proc, port, url: `http://localhost:${port}`, tmpDir, output: [] };
+  const ctx: ProcessContext = { proc, port, url: `http://localhost:${port}`, tmpDir, output: [], token: TEST_TOKEN };
   await waitForReady(ctx, "Listening on");
   return ctx;
 }
 
 /** Spawn a node connecting to panelUrl. */
-export async function spawnNode(panelUrl: string, opts: { name?: string; relay?: boolean } = {}): Promise<ProcessContext> {
+export async function spawnNode(panelUrl: string, opts: { name?: string; relay?: boolean; token?: string } = {}): Promise<ProcessContext> {
   const port = await getFreePort();
   const tmpDir = `/tmp/al-test-node-${port}`;
   mkdirSync(tmpDir, { recursive: true });
-  const args = ["run", "src/cli.ts", "node", panelUrl, "--no-auth", "--port", String(port)];
+  const token = opts.token || TEST_TOKEN;
+  const args = ["run", "src/cli.ts", "node", panelUrl, "--no-auth", "--port", String(port), "--token", token];
   if (opts.name) args.push("--name", opts.name);
   if (opts.relay) args.push("--accept-nodes");
   const proc = spawn("bun", args, {

@@ -1,5 +1,6 @@
 import type { NodeToPanel, PanelToNode } from "../protocol";
 import { load, save } from "../store";
+import { encrypt, decrypt } from "../crypto";
 import * as logger from "../logger";
 
 type Listener = (msg: any) => void;
@@ -23,6 +24,7 @@ export interface ConnectedNode {
   vscodeServers: { cwd: string; id: string; commit: string; port: number }[];
   connectedAt: number;
   lastHeartbeat: number;
+  nodeKey: Buffer | null;
 }
 
 // Persisted records keyed by machineId
@@ -82,7 +84,8 @@ export function listNodes(): {
 
 function sendToNode(node: ConnectedNode, msg: PanelToNode) {
   if (node.ws.readyState === WebSocket.OPEN) {
-    node.ws.send(JSON.stringify(msg));
+    const json = JSON.stringify(msg);
+    node.ws.send(node.nodeKey ? encrypt(node.nodeKey, json) : json);
   }
 }
 
@@ -139,10 +142,18 @@ export function sendRaw(nodeId: string, msg: PanelToNode) {
 }
 
 export function handleNodeMessage(nodeId: string, raw: string) {
-  let msg: NodeToPanel;
-  try { msg = JSON.parse(raw); } catch { return; }
-
   const node = nodes.get(nodeId);
+
+  let decrypted = raw;
+  if (node?.nodeKey) {
+    try { decrypted = decrypt(node.nodeKey, raw); } catch {
+      logger.warn("panel", `Failed to decrypt message from ${nodeId}`);
+      return;
+    }
+  }
+
+  let msg: NodeToPanel;
+  try { msg = JSON.parse(decrypted); } catch { return; }
 
   switch (msg.type) {
     case "heartbeat":
@@ -192,7 +203,7 @@ export function onTunnelMessage(handler: TunnelMessageHandler) {
 }
 
 export function registerNode(
-  ws: WebSocket, machineId: string, label: string,
+  ws: WebSocket, machineId: string, label: string, nodeKey: Buffer | null = null,
 ): { nodeId: string; approved: boolean } {
   const now = Date.now();
   // machineId IS the nodeId — no separate ID generation
@@ -220,6 +231,7 @@ export function registerNode(
     ws: ws as any, online: true, approved: record.approved,
     activeSessionIds: [], vscodeServers: [],
     connectedAt: now, lastHeartbeat: now,
+    nodeKey,
   });
 
   logger.log("panel", `Node ${record.approved ? "registered" : "pending"}: ${nodeId} (${record.label})`);

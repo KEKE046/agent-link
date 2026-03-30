@@ -6,8 +6,10 @@ const COOKIE_NAME = "agent-link-auth";
 const COOKIE_MAX_AGE = 30 * 24 * 3600; // 30 days
 
 let adminToken: string | null = null;
+let httpAuthEnforced = false;
 
-export function initAuth(token?: string): string {
+export function initAuth(token?: string, enforceHttp = true): string {
+  httpAuthEnforced = enforceHttp;
   const stored = load<{ token?: string }>("auth", {});
   if (token) {
     adminToken = token;
@@ -26,7 +28,7 @@ export function getToken(): string | null {
 }
 
 export function isEnabled(): boolean {
-  return adminToken !== null;
+  return adminToken !== null && httpAuthEnforced;
 }
 
 export function resetAuth() {
@@ -42,7 +44,7 @@ async function hmacSign(value: string): Promise<string> {
   );
   const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value));
   const hex = [...new Uint8Array(sig)].map(b => b.toString(16).padStart(2, "0")).join("");
-  return `${value}.${hex.slice(0, 16)}`;
+  return `${value}.${hex}`;
 }
 
 async function hmacVerify(signed: string): Promise<boolean> {

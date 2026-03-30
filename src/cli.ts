@@ -11,7 +11,8 @@
 // Legacy flags (no subcommand) are still supported for backward compatibility.
 
 import { getMachineId } from "./identity";
-import { initAuth, verifyCookie, isEnabled as authEnabled } from "./auth";
+import { initAuth, getToken, verifyCookie, isEnabled as authEnabled } from "./auth";
+import { deriveNodeKey, encrypt, computeAuth } from "./crypto";
 import { Router } from "./router";
 import { createApp } from "./routes";
 import { getActiveServerById } from "./vscode";
@@ -93,12 +94,13 @@ Server options:
   --bind <ip>       Bind IP address (default: 127.0.0.1, or 0.0.0.0 when --accept-nodes)
   --accept-nodes    Accept remote node connections via WebSocket
   --no-local        Disable local Claude SDK (router-only, requires --accept-nodes)
-  --token <value>   Admin token for panel auth (auto-generated if omitted)
-  --no-auth         Disable auth (for testing)
+  --token <value>   Link secret for node encryption + panel auth (auto-generated if omitted)
+  --no-auth         Disable HTTP auth (login not required, but WS encryption still active)
   --debug           Enable debug logging
 
 Node options:
   --name <name>     Node display name (default: machine ID)
+  --token <value>   Link secret (must match panel's token for encrypted connection)
   --bind <ip>       Bind IP (default: 127.0.0.1, or 0.0.0.0 when --accept-nodes)
   --port <n>        Listen port (default: 3456)
   --accept-nodes    Also accept sub-nodes (relay mode), serves on same port
@@ -151,14 +153,14 @@ if (connectTo) {
   logger.log("node", `Connecting to: ${connectTo}`);
 
   const { connect } = await import("./node/connector");
-  connect(connectTo, machineId, label);
+  // Always init auth: token is needed for WS encryption (nodeKey derivation)
+  // and optionally for local HTTP API auth.
+  const nodeToken = initAuth(tokenArg, !noAuth);
+  connect(connectTo, machineId, label, nodeToken);
 
   // Local HTTP API server — also handles relay WS on /ws/node when --accept-nodes
   const localRouter = new Router(machineId);
-  if (!noAuth) {
-    initAuth(tokenArg);
-    logger.log("node", `Local API token saved to store`);
-  }
+  logger.log("node", `Local API auth: ${noAuth ? "disabled" : "enabled"}`);
   const localApp = createApp(localRouter, label);
 
   let relayHandlers: ReturnType<typeof import("./node/relay")["createRelayHandlers"]> | null = null;
@@ -194,10 +196,12 @@ if (connectTo) {
   const localId = noLocal ? null : getMachineId();
   const router = new Router(localId);
 
-  if (acceptNodes && !noAuth) {
-    const token = initAuth(tokenArg);
-    logger.log("server", `Admin token: ${token}`);
-    logger.log("server", `Login URL: http://localhost:${port}/login?token=${token}`);
+  if (acceptNodes) {
+    const token = initAuth(tokenArg, !noAuth);
+    logger.log("server", `Link secret: ${token}`);
+    if (!noAuth) {
+      logger.log("server", `Login URL: http://localhost:${port}/login?token=${token}`);
+    }
   }
 
   let panelNodes: typeof import("./panel/nodes") | null = null;
@@ -305,16 +309,29 @@ if (connectTo) {
         const data = ws.data as SocketData;
         if (data.type === "node" && panelNodes) {
           if (!data.nodeId) {
+            // First message: plaintext register with HMAC auth
             try {
               const msg = JSON.parse(typeof message === "string" ? message : new TextDecoder().decode(message));
               if (msg.type === "register") {
-                const reg = panelNodes.registerNode(ws, msg.machineId, msg.label);
+                const token = getToken();
+                // Verify HMAC auth before touching any node state
+                if (token) {
+                  const expected = computeAuth(token, msg.machineId);
+                  if (msg.auth !== expected) {
+                    logger.warn("panel", `Rejected node ${msg.machineId}: invalid auth`);
+                    ws.close();
+                    return;
+                  }
+                }
+                const nk = token ? deriveNodeKey(token, msg.machineId) : null;
+                const reg = panelNodes.registerNode(ws, msg.machineId, msg.label, nk);
                 data.nodeId = reg.nodeId;
-                ws.send(JSON.stringify(
+                const response = JSON.stringify(
                   reg.approved
                     ? { type: "registered", nodeId: reg.nodeId }
                     : { type: "pending" }
-                ));
+                );
+                ws.send(nk ? encrypt(nk, response) : response);
                 console.log(`[panel] Node ${reg.approved ? "registered" : "pending"}: ${reg.nodeId} (${msg.label})`);
               }
             } catch {}
