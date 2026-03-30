@@ -29,6 +29,10 @@ export function isEnabled(): boolean {
   return adminToken !== null;
 }
 
+export function resetAuth() {
+  adminToken = null;
+}
+
 // --- Cookie signing ---
 
 async function hmacSign(value: string): Promise<string> {

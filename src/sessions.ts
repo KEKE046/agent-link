@@ -1,5 +1,6 @@
 import { getClaudeSdk, type Query } from "./claude-sdk";
 import type { ClaudeParams } from "./managed";
+import { mkdirSync } from "node:fs";
 import * as logger from "./logger";
 
 type Listener = (msg: any) => void;
@@ -73,6 +74,9 @@ export async function startQuery(
     cwd: opts.cwd,
     ...extraOptions,
   };
+
+  // Ensure cwd exists before starting the session
+  try { mkdirSync(queryOpts.cwd, { recursive: true }); } catch {}
   // Only set model if explicitly specified
   const model = extraOptions.model || opts.model;
   if (model) queryOpts.model = model;

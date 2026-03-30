@@ -25,7 +25,7 @@ function app() {
       const v = localStorage.getItem('agent-link:sidebar-collapsed');
       return v !== null ? v === 'true' : !window.matchMedia('(min-width: 768px)').matches;
     })(),
-    theme: localStorage.getItem('agent-link:theme') === 'light' ? 'light' : 'dark',
+    theme: localStorage.getItem('agent-link:theme') || 'auto',
 
     // Nodes
     nodes: [],
@@ -55,13 +55,22 @@ function app() {
       this.$watch('sidebarWidth', (v) => localStorage.setItem('agent-link:sidebar-width', String(this.clampWidth(v))));
       this.$watch('selectedNodeId', (v) => localStorage.setItem('agent-link:nodeId', v));
       this.$watch('theme', (v) => { localStorage.setItem('agent-link:theme', v); this.applyTheme(); });
+      window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+        if (this.theme === 'auto') this.applyTheme();
+      });
     },
 
     applyTheme() {
-      if (this.theme === 'light') document.body.classList.add('light-theme');
+      const effective = this.theme === 'auto'
+        ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+        : this.theme;
+      if (effective === 'light') document.body.classList.add('light-theme');
       else document.body.classList.remove('light-theme');
     },
-    toggleTheme() { this.theme = this.theme === 'light' ? 'dark' : 'light'; },
+    toggleTheme() {
+      // Cycle: auto → light → dark → auto
+      this.theme = this.theme === 'auto' ? 'light' : this.theme === 'light' ? 'dark' : 'auto';
+    },
     toggleSidebar() { this.sidebarCollapsed = !this.sidebarCollapsed; },
     clampWidth(w) { return Math.min(480, Math.max(180, Number.isFinite(w) ? w : 256)); },
 
