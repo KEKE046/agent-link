@@ -3,6 +3,7 @@
 
 import * as sessions from "./sessions";
 import * as copy from "./copy";
+import { forkSession } from "./fork";
 import {
   listInstalledVersions,
   startVscodeServer,
@@ -49,6 +50,8 @@ export async function dispatch(action: string, params: any): Promise<any> {
       return copy.startDelete(params.taskId);
     case "copyRemove":
       return { ok: copy.removeTask(params.taskId) };
+    case "forkSession":
+      return forkSession(params.sessionId, params.srcCwd, params.destCwd);
     default:
       throw new Error(`Unknown action: ${action}`);
   }

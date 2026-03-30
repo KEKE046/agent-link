@@ -287,16 +287,16 @@
     <template x-if="agentDialog">
       <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50" @click.self="agentDialog = null" @keydown.escape.window="agentDialog = null">
         <div class="bg-gray-900 border border-gray-700 rounded-lg flex overflow-hidden"
-             :style="(agentDialog.configOpen ? 'width:800px' : 'width:480px') + (agentDialog.tab === 'load' ? ';height:80vh' : ';max-height:80vh')">
+             :style="(agentDialog.configOpen ? 'width:800px' : 'width:480px') + (agentDialog.tab === 'load' || agentDialog.tab === 'import' ? ';height:80vh' : ';max-height:80vh')">
 
           <!-- Left: main form -->
           <div class="flex flex-col flex-1 min-w-0">
             <!-- Header -->
             <div class="px-4 py-3 border-b border-gray-800 flex items-center gap-2">
               <span class="text-sm font-semibold text-gray-200 flex-1">Create Agent</span>
-              <button @click="agentDialog.configOpen = !agentDialog.configOpen"
+              <button @click="agentDialog.configOpen = !agentDialog.configOpen; localStorage.setItem('agent-link:agent-config-open', agentDialog.configOpen)"
                       :class="agentDialog.configOpen ? 'bg-gray-700 text-gray-200' : 'text-gray-500 hover:text-gray-300'"
-                      class="px-2 py-1 text-xs rounded hover:bg-gray-800" title="Toggle config">&#9881;</button>
+                      class="px-2 py-1 text-xs rounded hover:bg-gray-800 emoji-text" title="Toggle config">⚙</button>
               <button @click="agentDialog = null" class="px-2 py-1 text-gray-600 hover:text-gray-300 text-xs rounded hover:bg-gray-800">x</button>
             </div>
 
@@ -331,14 +331,17 @@
                 </div>
               </div>
 
-              <!-- Tabs: New / Load -->
+              <!-- Tabs: New / Load / Import -->
               <div class="flex gap-1">
                 <button @click="agentDialog.tab = 'new'"
                         :class="agentDialog.tab === 'new' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'"
                         class="px-4 py-1.5 text-xs font-medium rounded">New</button>
-                <button @click="agentDialog.tab = 'load'; if (browseSessions.length === 0) fetchBrowseSessions()"
+                <button @click="agentDialog.tab = 'load'; agentDialog.browseFilter = agentDialog.cwd; agentDialog.browseExact = !!agentDialog.browseFilter; agentDialog.browseOffset = 0; fetchBrowseSessions()"
                         :class="agentDialog.tab === 'load' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'"
                         class="px-4 py-1.5 text-xs font-medium rounded">Load</button>
+                <button @click="agentDialog.tab = 'import'; agentDialog.browseExact = false; agentDialog.browseFilter = ''; agentDialog.browseOffset = 0; fetchBrowseSessions()"
+                        :class="agentDialog.tab === 'import' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'"
+                        class="px-4 py-1.5 text-xs font-medium rounded">Import</button>
               </div>
 
               <!-- New tab -->
@@ -352,8 +355,11 @@
                           class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm mono outline-none focus:border-gray-500 resize-y"></textarea>
               </div>
 
-              <!-- Load tab -->
-              <div x-show="agentDialog.tab === 'load'" class="flex flex-col gap-2 flex-1 min-h-0">
+              <!-- Load / Import tab (shared browse UI) -->
+              <div x-show="agentDialog.tab === 'load' || agentDialog.tab === 'import'" class="flex flex-col gap-2 flex-1 min-h-0">
+                <div x-show="agentDialog.tab === 'import'" class="text-[10px] text-gray-500 px-1">
+                  Fork a session to a new working directory. The session history is copied and the model is notified of the directory change.
+                </div>
                 <div class="flex gap-1">
                   <input x-model="agentDialog.browseFilter" @input.debounce.500ms="agentDialog.browseOffset = 0; fetchBrowseSessions()" placeholder="Filter by cwd..."
                          class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-1 text-xs mono outline-none focus:border-gray-500" />
@@ -373,7 +379,7 @@
             <!-- Footer -->
             <div class="p-3 border-t border-gray-800 flex gap-2">
               <button @click="agentDialog = null" class="flex-1 px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded text-sm">Cancel</button>
-              <button @click="submitAgentDialog()" :disabled="!agentDialog.name.trim() || (agentDialog.tab === 'load' && !agentDialog.browseSelected)"
+              <button @click="submitAgentDialog()" :disabled="!agentDialog.name.trim() || ((agentDialog.tab === 'load' || agentDialog.tab === 'import') && !agentDialog.browseSelected)"
                       class="flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 rounded text-sm">Create</button>
             </div>
           </div>

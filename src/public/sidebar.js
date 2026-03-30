@@ -272,7 +272,7 @@ function sidebar() {
         bio: '',
         initialPrompt: initPrompt,
         initialPromptDirty: false,
-        configOpen: false,
+        configOpen: localStorage.getItem('agent-link:agent-config-open') !== 'false',
         // Config fields
         cfgModel: '',
         cfgThinking: '',
@@ -283,7 +283,7 @@ function sidebar() {
         cfgEnvText: '',
         cfgJsonText: '{}',
         cfgJsonError: '',
-        cfgShowSystemPrompt: false,
+        cfgShowSystemPrompt: true,
         cfgShowEnv: false,
         cfgShowJson: false,
         // Browse state (sessions/loading/hasMore are top-level for Alpine reactivity)
@@ -402,7 +402,8 @@ function sidebar() {
       const s = this.browseSessions.find(s => s.sessionId === sessionId);
       if (!s) return;
       this.agentDialog.browseSelected = this.agentDialog.browseSelected === sessionId ? null : sessionId;
-      if (s.cwd) this.agentDialog.cwd = s.cwd;
+      // For Load tab, update cwd to match selected session; for Import tab, keep dest cwd unchanged
+      if (this.agentDialog.tab !== 'import' && s.cwd) this.agentDialog.cwd = s.cwd;
       if (!this.agentDialog.name && s.summary) this.agentDialog.name = s.summary.slice(0, 30);
     },
 
@@ -435,7 +436,15 @@ function sidebar() {
       const params = { claude: this.buildDialogParams() };
       const nodeId = d.nodeId;
 
-      if (d.tab === 'load' && d.browseSelected) {
+      if (d.tab === 'import' && d.browseSelected) {
+        // Import: fork session to new cwd
+        const srcSession = this.browseSessions.find(s => s.sessionId === d.browseSelected);
+        emit('agent-create', {
+          name: d.name.trim(), bio: d.bio.trim() || undefined, cwd: d.cwd, nodeId, params,
+          importSessionId: d.browseSelected,
+          importSrcCwd: srcSession?.cwd || d.browseFilter,
+        });
+      } else if (d.tab === 'load' && d.browseSelected) {
         emit('agent-create', {
           name: d.name.trim(), bio: d.bio.trim() || undefined, cwd: d.cwd, nodeId, params,
           loadSessionId: d.browseSelected,
