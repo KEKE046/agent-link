@@ -23,6 +23,7 @@ export function createTestSdk() {
             model: (args.options as any)?.model || "sonnet",
             cwd: (args.options as any)?.cwd || "/tmp",
             tools: [],
+            slash_commands: ["compact", "clear", "help", "model"],
           },
           {
             type: "assistant",
@@ -101,6 +102,7 @@ export function installSlowSdk(delayMs = 3000) {
             model: (args.options as any)?.model || "sonnet",
             cwd: (args.options as any)?.cwd || "/tmp",
             tools: [],
+            slash_commands: ["compact", "clear", "help", "model"],
             // __delay is consumed by the patched iterator below
             __delay: delayMs,
           } as any,
@@ -153,6 +155,73 @@ export function installSlowSdk(delayMs = 3000) {
 /** Restore the default fast mock SDK. */
 export function installFastSdk(ctx: TestContext) {
   setClaudeSdk(ctx.sdk.sdk);
+}
+
+/** Install a mock SDK that emits background task lifecycle messages. */
+export function installTaskSdk() {
+  const { sdk } = createMockClaudeSdk({
+    queryFactory: (args) => {
+      const sessionId = (args.options as any)?.resume || `test-session-${++queryCounter}`;
+      return {
+        messages: [
+          {
+            type: "system",
+            subtype: "init",
+            session_id: sessionId,
+            model: (args.options as any)?.model || "sonnet",
+            cwd: (args.options as any)?.cwd || "/tmp",
+            tools: [],
+            slash_commands: ["compact", "clear", "help", "model"],
+          },
+          {
+            type: "system",
+            subtype: "task_started",
+            task_id: "bg-task-1",
+            description: "Searching codebase",
+            task_type: "background",
+            uuid: "uuid-task-started",
+            session_id: sessionId,
+          },
+          {
+            type: "system",
+            subtype: "task_progress",
+            task_id: "bg-task-1",
+            description: "Searching codebase",
+            summary: "Found 3 matches so far",
+            usage: { total_tokens: 500, tool_uses: 2, duration_ms: 1200 },
+            last_tool_name: "Grep",
+            uuid: "uuid-task-progress",
+            session_id: sessionId,
+          },
+          {
+            type: "assistant",
+            message: {
+              content: [{ type: "text", text: "Working on the background task..." }],
+            },
+          },
+          {
+            type: "system",
+            subtype: "task_notification",
+            task_id: "bg-task-1",
+            status: "completed",
+            summary: "Found 5 TypeScript files matching the pattern",
+            output_file: "/tmp/output",
+            usage: { total_tokens: 1200, tool_uses: 5, duration_ms: 3000 },
+            uuid: "uuid-task-notification",
+            session_id: sessionId,
+          },
+          {
+            type: "result",
+            subtype: "success",
+            total_cost_usd: 0.005,
+            num_turns: 2,
+            usage: { input_tokens: 100, output_tokens: 200 },
+          },
+        ],
+      };
+    },
+  });
+  setClaudeSdk(sdk);
 }
 
 /** Create a fresh browser context + page for a single test. */

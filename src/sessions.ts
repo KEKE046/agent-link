@@ -165,6 +165,27 @@ export async function interrupt(sessionId: string) {
   }
 }
 
+export async function stopTask(sessionId: string, taskId: string) {
+  const s = active.get(sessionId);
+  if (s) {
+    await s.query.stopTask(taskId);
+  }
+}
+
+export function getInitData(sessionId: string): any | null {
+  const buf = buffers.get(sessionId);
+  if (!buf) return null;
+  return buf.find(m => m.type === 'system' && m.subtype === 'init') || null;
+}
+
+export async function getSessionCommands(sessionId: string): Promise<any[] | null> {
+  const s = active.get(sessionId);
+  if (!s) return null;
+  try {
+    return await s.query.supportedCommands();
+  } catch { return null; }
+}
+
 export async function setModel(sessionId: string, model: string) {
   const s = active.get(sessionId);
   if (s) {

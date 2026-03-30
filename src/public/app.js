@@ -39,6 +39,12 @@ function app() {
     // Copy tasks: { "dest": {id, src, dest, status, error} }
     copyTaskMap: {},
 
+    // Command completion
+    slashCommands: [],       // cached SlashCommand[] { name, description, argumentHint }
+    completions: [],         // filtered completions for current input
+    completionIdx: -1,       // selected index in dropdown
+    _cmdCacheKey: '',        // sessionId used to fetch commands
+
     // Auth state
     authRequired: false,
     authenticated: true,
@@ -55,10 +61,11 @@ function app() {
         this.refreshActive();
         this.refreshVscode();
         this.refreshCopyTasks();
-        setInterval(() => { this.refreshActive(); this.refreshNodes(); this.refreshVscode(); this.refreshCopyTasks(); }, 5000);
+        setInterval(() => { this.refreshActive(); this.refreshNodes(); this.refreshVscode(); this.refreshCopyTasks(); this.refreshSlashCommands(); }, 5000);
       });
       this.$watch('cwd', (v) => localStorage.setItem('agent-link:cwd', v));
       this.$watch('model', (v) => localStorage.setItem('agent-link:model', v));
+      this.$watch('inputText', () => this.updateCompletions());
       this.$watch('sidebarCollapsed', (v) => localStorage.setItem('agent-link:sidebar-collapsed', String(v)));
       this.$watch('sidebarWidth', (v) => localStorage.setItem('agent-link:sidebar-width', String(this.clampWidth(v))));
       this.$watch('selectedNodeId', (v) => localStorage.setItem('agent-link:nodeId', v));
@@ -109,7 +116,7 @@ function app() {
         this.refreshActive();
         this.refreshVscode();
         this.refreshCopyTasks();
-        setInterval(() => { this.refreshActive(); this.refreshNodes(); this.refreshVscode(); this.refreshCopyTasks(); }, 5000);
+        setInterval(() => { this.refreshActive(); this.refreshNodes(); this.refreshVscode(); this.refreshCopyTasks(); this.refreshSlashCommands(); }, 5000);
       } catch (err) {
         this.loginError = err.message;
       }
@@ -215,6 +222,7 @@ function app() {
       this.msg('clear');
       this.seenUuids = new Set();
       this.totalCost = 0; this.totalIn = 0; this.totalOut = 0;
+      this.completions = []; this.completionIdx = -1;
       if (this.eventSource) { this.eventSource.close(); this.eventSource = null; }
       this.$nextTick(() => this.$el.querySelector('input[x-model="inputText"]')?.focus());
     },
@@ -367,6 +375,8 @@ function app() {
       this.msg('clear');
       this.seenUuids = new Set();
       this.totalCost = 0; this.totalIn = 0; this.totalOut = 0;
+      this.completions = []; this.completionIdx = -1;
+      this.slashCommands = []; this._cmdCacheKey = '';
 
       const s = this.managed.find(s => s.sessionId === id);
       if (s) {
@@ -476,6 +486,11 @@ function app() {
         this.totalOut += msg.usage?.output_tokens || 0;
         this.msg('append', msg);
       } else if (msg.type === 'system') {
+        // Always cache slash commands from init, even if we skip rendering
+        if (msg.subtype === 'init' && msg.slash_commands && msg.slash_commands.length > 0 && this.slashCommands.length === 0) {
+          this.slashCommands = msg.slash_commands.map(name => ({ name, description: '', argumentHint: '' }));
+          this._cmdCacheKey = ''; // partial (no descriptions), will be enriched by API fetch
+        }
         if (msg.subtype === 'init' && this.seenUuids.size > 0) return;
         this.msg('append', msg);
       } else if (msg.type === 'status') {
@@ -485,6 +500,7 @@ function app() {
           this.syncActive();
         }
       } else if (msg.type === 'error') { this.msg('append', msg); }
+      // tool_progress is silently ignored (too noisy for chat)
     },
 
     refreshData() {
@@ -541,6 +557,96 @@ function app() {
         await fetch('/api/vscode/stop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       } catch {}
       this.refreshVscode();
+    },
+
+    // --- Command completion ---
+
+    async refreshSlashCommands() {
+      if (!this.currentId) return;
+      if (this._cmdCacheKey === this.currentId) return;
+      try {
+        const res = await fetch(`/api/sessions/${encodeURIComponent(this.currentId)}/commands`);
+        if (res.ok) {
+          const cmds = await res.json();
+          if (Array.isArray(cmds) && cmds.length > 0) {
+            this.slashCommands = cmds;
+            this._cmdCacheKey = this.currentId;
+            return;
+          }
+        }
+      } catch {}
+      // Fallback: try init data for slash_commands (names only, no descriptions)
+      if (this.slashCommands.length === 0) {
+        try {
+          const res = await fetch(`/api/sessions/${encodeURIComponent(this.currentId)}/init`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.slash_commands?.length > 0) {
+              this.slashCommands = data.slash_commands.map(name => ({ name, description: '', argumentHint: '' }));
+            }
+          }
+        } catch {}
+      }
+    },
+
+    updateCompletions() {
+      const text = this.inputText;
+      if (!text.startsWith('/') || text.includes(' ') || !this.currentId) {
+        this.completions = [];
+        this.completionIdx = -1;
+        return;
+      }
+      const filter = text.slice(1).toLowerCase();
+      this.completions = this.slashCommands
+        .filter(c => c.name.toLowerCase().startsWith(filter))
+        .slice(0, 10);
+      this.completionIdx = this.completions.length > 0 ? 0 : -1;
+    },
+
+    selectCompletion(idx) {
+      const c = this.completions[idx];
+      if (!c) return;
+      this.inputText = '/' + c.name + ' ';
+      this.completions = [];
+      this.completionIdx = -1;
+      this.$nextTick(() => this.$el.querySelector('input[x-model="inputText"]')?.focus());
+    },
+
+    handleInputKeydown(e) {
+      if (this.completions.length > 0) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          this.completionIdx = (this.completionIdx + 1) % this.completions.length;
+          return;
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          this.completionIdx = (this.completionIdx - 1 + this.completions.length) % this.completions.length;
+          return;
+        }
+        if (e.key === 'Tab') {
+          e.preventDefault();
+          if (this.completionIdx >= 0) this.selectCompletion(this.completionIdx);
+          return;
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          this.completions = [];
+          this.completionIdx = -1;
+          return;
+        }
+        if (e.key === 'Enter') {
+          if (this.completionIdx >= 0) {
+            e.preventDefault();
+            this.selectCompletion(this.completionIdx);
+            return;
+          }
+        }
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        this.send();
+      }
     },
   };
 }
