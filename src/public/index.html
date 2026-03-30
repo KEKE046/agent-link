@@ -98,8 +98,8 @@
       <span x-show="totalCost > 0" class="text-gray-700 text-[11px] font-mono flex-shrink-0 ml-1">$<span x-text="totalCost.toFixed(4)"></span></span>
       <div class="w-px h-4 bg-gray-800 mx-1 flex-shrink-0"></div>
       <button @click="toggleTheme()" class="header-btn"
-              :title="theme === 'light' ? 'Switch to dark' : 'Switch to light'"
-              x-text="theme === 'light' ? '☼' : '☾'"></button>
+              :title="theme === 'auto' ? 'Auto (system), click for light' : theme === 'light' ? 'Light, click for dark' : 'Dark, click for auto'"
+              x-text="theme === 'auto' ? '◑' : theme === 'light' ? '☼' : '☾'"></button>
       <button @click="emit('config-toggle')" class="header-btn emoji-text" title="Agent config">⚙</button>
   </div>
 
@@ -143,7 +143,7 @@
                       </span>
                       <span @click="g.sessions.length === 1 ? emit('session-switch', g.sessions[0].sessionId) : toggleGroup(n.nodeId + ':' + g.cwd)"
                             class="truncate flex-1 font-medium cursor-pointer" :title="g.cwd"
-                            x-text="g.label ? '[' + g.label + ']' : (g.cwd.split('/').filter(Boolean).pop() || g.cwd)"></span>
+                            x-text="g.label ? '[' + g.label + ']' : g.cwd"></span>
                       <span x-show="g.sessions.length > 1" class="text-gray-600 text-[10px]" x-text="'(' + g.sessions.length + ')'"></span>
                       <div class="relative">
                         <button @click.stop="openMenu($el, n.nodeId + ':' + g.cwd, 'folder')"
