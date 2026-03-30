@@ -6,6 +6,7 @@ export interface MsgRegister {
   type: "register";
   machineId: string;
   label: string;
+  auth?: string; // HMAC-SHA256(token, machineId) — proves knowledge of shared secret
 }
 
 export interface MsgHeartbeat {

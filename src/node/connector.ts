@@ -3,16 +3,20 @@ import { dispatch } from "../dispatch";
 import * as sessions from "../sessions";
 import { listActiveServers } from "../vscode";
 import { handleTunnelRequest, handleTunnelWsOpen, handleTunnelWsData, handleTunnelWsClose } from "./tunnel";
+import { encrypt, decrypt, deriveNodeKey, computeAuth } from "../crypto";
 import * as logger from "../logger";
 
 let ws: WebSocket | null = null;
+let nodeKey: Buffer | null = null;
+let nodeSecret: string | undefined;
 let reconnectDelay = 1000;
 let heartbeatTimer: Timer | null = null;
 let eventForwardingTimer: Timer | null = null;
 
 export function send(msg: NodeToPanel) {
   if (ws?.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(msg));
+    const json = JSON.stringify(msg);
+    ws.send(nodeKey ? encrypt(nodeKey, json) : json);
   }
 }
 
@@ -94,7 +98,11 @@ function setupEventForwarding() {
   }, 500);
 }
 
-export function connect(panelUrl: string, machineId: string, label: string) {
+export function connect(panelUrl: string, machineId: string, label: string, secret?: string) {
+  if (secret) {
+    nodeSecret = secret;
+    nodeKey = deriveNodeKey(secret, machineId);
+  }
   const wsUrl = panelUrl.replace(/^http/, "ws") + "/ws/node";
   logger.log("node", `Connecting to ${wsUrl}...`);
 
@@ -103,13 +111,25 @@ export function connect(panelUrl: string, machineId: string, label: string) {
   ws.addEventListener("open", () => {
     reconnectDelay = 1000;
     logger.log("node", "Connected to panel");
-    send({ type: "register", machineId, label });
+    // Register is plaintext, but includes HMAC auth to prove we know the token
+    if (ws?.readyState === WebSocket.OPEN) {
+      const reg: any = { type: "register", machineId, label };
+      if (nodeSecret) reg.auth = computeAuth(nodeSecret, machineId);
+      ws.send(JSON.stringify(reg));
+    }
     scheduleHeartbeat();
     setupEventForwarding();
   });
 
   ws.addEventListener("message", (e) => {
-    handleMessage(typeof e.data === "string" ? e.data : new TextDecoder().decode(e.data as any));
+    let raw = typeof e.data === "string" ? e.data : new TextDecoder().decode(e.data as any);
+    if (nodeKey) {
+      try { raw = decrypt(nodeKey, raw); } catch {
+        logger.error("node", "Failed to decrypt message from panel (wrong token?)");
+        return;
+      }
+    }
+    handleMessage(raw);
   });
 
   ws.addEventListener("close", () => {
