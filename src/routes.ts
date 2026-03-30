@@ -326,7 +326,7 @@ export function createApp(router: Router, initialLabel = ""): Hono {
     const nodeId = body.nodeId || getNodeId(c) || router.localId;
     if (!nodeId) return c.json({ error: "nodeId required" }, 400);
     try {
-      return c.json(await router.dispatch(nodeId, "startVscodeServer", { cwd: body.cwd, commit: body.commit }));
+      return c.json(await router.dispatch(nodeId, "startVscodeServer", { cwd: body.cwd, commit: body.commit, nodeId }));
     } catch (err: any) {
       return c.json({ error: err.message }, 500);
     }

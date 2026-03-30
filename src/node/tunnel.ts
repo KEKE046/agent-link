@@ -14,10 +14,11 @@ import type {
 const wsTunnels = new Map<string, WebSocket>();
 
 function findPortForPath(path: string): number | null {
-  // Path format: /<id>/... where id is a short hash of the cwd
-  // From Panel, we get the path after nodeId already stripped: /<id>/...
+  // Path format: /vscode/<nodeId>/<hash>/... — full path forwarded from Panel
   const parts = path.split("/").filter(Boolean);
-  const encodedCwd = parts[0] || "";
+  // parts: ["vscode", nodeId, hash, ...]
+  const hashIdx = parts[0] === "vscode" ? 2 : 0;
+  const encodedCwd = parts[hashIdx] || "";
   if (!encodedCwd) return null;
 
   const server = getActiveServerById(encodedCwd);

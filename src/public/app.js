@@ -33,6 +33,9 @@ function app() {
     localLabel: '',
     selectedNodeId: localStorage.getItem('agent-link:nodeId') || '',
 
+    // VSCode active servers: { "nodeId:cwd": {id, nodeId, cwd, commit, port} }
+    vscodeActive: {},
+
     // Auth state
     authRequired: false,
     authenticated: true,
@@ -47,7 +50,8 @@ function app() {
         if (!this.authenticated) return;
         this.fetchNodes().then(() => { this.loadManaged(); this.loadFolders(); });
         this.refreshActive();
-        setInterval(() => { this.refreshActive(); this.refreshNodes(); }, 5000);
+        this.refreshVscode();
+        setInterval(() => { this.refreshActive(); this.refreshNodes(); this.refreshVscode(); }, 5000);
       });
       this.$watch('cwd', (v) => localStorage.setItem('agent-link:cwd', v));
       this.$watch('model', (v) => localStorage.setItem('agent-link:model', v));
@@ -99,7 +103,8 @@ function app() {
         this.loginToken = '';
         this.fetchNodes().then(() => { this.loadManaged(); this.loadFolders(); });
         this.refreshActive();
-        setInterval(() => { this.refreshActive(); this.refreshNodes(); }, 5000);
+        this.refreshVscode();
+        setInterval(() => { this.refreshActive(); this.refreshNodes(); this.refreshVscode(); }, 5000);
       } catch (err) {
         this.loginError = err.message;
       }
@@ -164,6 +169,17 @@ function app() {
     },
     async refreshActive() {
       try { this.activeSet = new Set(await (await fetch('/api/active')).json()); this.syncActive(); } catch {}
+    },
+    async refreshVscode() {
+      try {
+        const list = await (await fetch('/api/vscode/active')).json();
+        const map = {};
+        for (const vs of list) {
+          const key = vs.nodeId ? (vs.nodeId + ':' + vs.cwd) : vs.cwd;
+          map[key] = vs;
+        }
+        this.vscodeActive = map;
+      } catch {}
     },
 
     syncActive() {
@@ -448,6 +464,17 @@ function app() {
 
     refreshData() {
       this.refreshNodes();
+      this.refreshVscode();
+    },
+
+    async stopVscode(detail) {
+      const { cwd, nodeId } = detail;
+      try {
+        const body = { cwd };
+        if (nodeId) body.nodeId = nodeId;
+        await fetch('/api/vscode/stop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      } catch {}
+      this.refreshVscode();
     },
   };
 }

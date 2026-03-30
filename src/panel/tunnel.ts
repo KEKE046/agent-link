@@ -31,13 +31,16 @@ const wsTunnels = new Map<
   }
 >();
 
-function rewriteRemoteAuthority(html: string, authority: string): string {
-  return html
+function rewriteVscodeHtml(html: string, authority: string): string {
+  let result = html
     .replace(/("remoteAuthority"\s*:\s*")[^"]+(")/, `$1${authority}$2`)
     .replace(
       /(&quot;remoteAuthority&quot;\s*:\s*&quot;)[^&]+(&quot;)/,
       `$1${authority}$2`
     );
+  const protocol = authority.startsWith("localhost") ? "http" : "https";
+  result = result.replace(/http:\/\/127\.0\.0\.1:\d+/g, `${protocol}://${authority}`);
+  return result;
 }
 
 // Initialize tunnel message handler
@@ -129,7 +132,7 @@ export async function tunnelHttpRequest(
 
   // Rewrite remoteAuthority in HTML responses at Panel side
   if (resp.isHtml && proxyAuthority) {
-    const html = rewriteRemoteAuthority(responseBody.toString(), proxyAuthority);
+    const html = rewriteVscodeHtml(responseBody.toString(), proxyAuthority);
     respHeaders.delete("content-length");
     return new Response(html, {
       status: resp.status,

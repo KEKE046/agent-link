@@ -86,6 +86,7 @@ if (subcommand === "help" || subArgs.includes("--help") || subArgs.includes("-h"
   agent-link intro [name|id] <text>                Set intro paragraph for an agent
   agent-link skill [--team-work]                   Print inter-agent teamwork cheatsheet (default)
   agent-link skill --setup                         Print installation and configuration guide
+  agent-link skill --vscode-install                Print VS Code Server install script
 
 Server options:
   --port <n>        HTTP port (default: 3456)
@@ -240,18 +241,15 @@ if (connectTo) {
     return h;
   }
 
-  function rewriteRemoteAuthority(html: string, authority: string): string {
-    return html
+  function rewriteVscodeHtml(html: string, authority: string): string {
+    // Rewrite remoteAuthority to use the proxy host
+    let result = html
       .replace(/("remoteAuthority"\s*:\s*")[^"]+(")/, `$1${authority}$2`)
       .replace(/(&quot;remoteAuthority&quot;\s*:\s*&quot;)[^&]+(&quot;)/, `$1${authority}$2`);
-  }
-
-  function vscodeTarget(req: Request, proxyPort: number): string {
-    const u = new URL(req.url);
-    u.protocol = "http:";
-    u.hostname = "127.0.0.1";
-    u.port = String(proxyPort);
-    return u.toString();
+    // Rewrite internal http://127.0.0.1:{port} URLs to use the proxy
+    const protocol = authority.startsWith("localhost") ? "http" : "https";
+    result = result.replace(/http:\/\/127\.0\.0\.1:\d+/g, `${protocol}://${authority}`);
+    return result;
   }
 
   // --- Bun server ---
@@ -282,10 +280,7 @@ if (connectTo) {
         if (authEnabled() && !(await verifyCookie(req.headers.get("cookie")))) {
           return new Response("Unauthorized", { status: 401 });
         }
-        if (acceptNodes && panelNodes && panelTunnel) {
-          return handleVscodeMultiNode(req, server, url, panelNodes, panelTunnel, router);
-        }
-        return handleVscodeStandalone(req, server, url);
+        return handleVscodeProxy(req, server, url, router, panelNodes, panelTunnel);
       }
 
       return app.fetch(req);
@@ -348,53 +343,13 @@ if (connectTo) {
     },
   });
 
-  // --- VSCode proxy: standalone mode ---
+  // --- VSCode proxy: unified handler (always /vscode/{nodeId}/{hash}/...) ---
 
-  async function handleVscodeStandalone(req: Request, server: any, url: URL): Promise<Response | undefined> {
-    const id = url.pathname.split("/")[2] || "";
-    const active = getActiveServerById(id);
-    if (!active) return new Response("VSCode server not found", { status: 404 });
-
-    const target = vscodeTarget(req, active.port);
-
-    if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
-      const ok = server.upgrade(req, {
-        data: { type: "vscode", target: target.replace("http:", "ws:") } satisfies SocketData,
-      });
-      return ok ? undefined : new Response("WebSocket upgrade failed", { status: 500 });
-    }
-
-    if (req.method === "GET" && req.headers.get("accept")?.includes("text/html")) {
-      const resp = await fetch(target, {
-        method: "GET",
-        headers: proxyHeaders(req, { "accept-encoding": "identity" }),
-        redirect: "manual",
-      });
-      if (resp.headers.get("content-type")?.includes("text/html")) {
-        const authority = req.headers.get("x-forwarded-host") || req.headers.get("host") || "localhost";
-        const html = rewriteRemoteAuthority(await resp.text(), authority);
-        const h = new Headers(resp.headers);
-        h.delete("content-length");
-        return new Response(html, { status: resp.status, headers: h });
-      }
-      return resp;
-    }
-
-    return fetch(target, {
-      method: req.method,
-      headers: proxyHeaders(req),
-      body: req.method !== "GET" && req.method !== "HEAD" ? req.body : undefined,
-      redirect: "manual",
-    });
-  }
-
-  // --- VSCode proxy: multi-node mode ---
-
-  async function handleVscodeMultiNode(
+  async function handleVscodeProxy(
     req: Request, server: any, url: URL,
-    nodes: typeof import("./panel/nodes"),
-    tunnel: typeof import("./panel/tunnel"),
     router: Router,
+    panelNodes?: typeof import("./panel/nodes"),
+    panelTunnel?: typeof import("./panel/tunnel"),
   ): Promise<Response | undefined> {
     const parts = url.pathname.split("/");
     const nodeId = parts[2] || "";
@@ -404,7 +359,7 @@ if (connectTo) {
       const active = getActiveServerById(id);
       if (!active) return new Response("VSCode server not found", { status: 404 });
 
-      const localPath = "/" + parts.slice(3).join("/") + (url.search || "");
+      const localPath = "/vscode/" + parts.slice(2).join("/") + (url.search || "");
       const target = `http://127.0.0.1:${active.port}${localPath}`;
 
       if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
@@ -423,7 +378,7 @@ if (connectTo) {
         });
         if (resp.headers.get("content-type")?.includes("text/html")) {
           const authority = req.headers.get("x-forwarded-host") || req.headers.get("host") || "localhost";
-          const html = rewriteRemoteAuthority(await resp.text(), authority);
+          const html = rewriteVscodeHtml(await resp.text(), authority);
           const h = new Headers(resp.headers);
           h.delete("content-length");
           return new Response(html, { status: resp.status, headers: h });
@@ -438,10 +393,14 @@ if (connectTo) {
       });
     }
 
-    const node = nodes.getNode(nodeId);
+    if (!panelNodes || !panelTunnel) {
+      return new Response("Node not found", { status: 404 });
+    }
+
+    const node = panelNodes.getNode(nodeId);
     if (!node || !node.online) return new Response("Node not found or offline", { status: 502 });
 
-    const forwardPath = "/" + parts.slice(3).join("/") + (url.search || "");
+    const forwardPath = "/vscode/" + parts.slice(2).join("/") + (url.search || "");
 
     if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
       const wsHeaders: Record<string, string> = {};
@@ -466,7 +425,7 @@ if (connectTo) {
     const authority = req.headers.get("x-forwarded-host") || req.headers.get("host") || "localhost";
 
     try {
-      return await tunnel.tunnelHttpRequest(nodeId, req.method, forwardPath, headers, body, authority);
+      return await panelTunnel.tunnelHttpRequest(nodeId, req.method, forwardPath, headers, body, authority);
     } catch (err: any) {
       return new Response(err.message, { status: 502 });
     }
