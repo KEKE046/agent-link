@@ -4,6 +4,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import * as logger from "./logger";
 
 const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude");
 const PROJECTS = join(CLAUDE_DIR, "projects");
@@ -63,5 +64,6 @@ export function forkSession(sessionId: string, srcCwd: string, destCwd: string):
   mkdirSync(destDir, { recursive: true });
   writeFileSync(join(destDir, `${newSessionId}.jsonl`), content);
 
+  logger.log("fork", `Fork: ${sessionId} → ${newSessionId} (${srcCwd} → ${destCwd})`);
   return { sessionId: newSessionId, srcCwd, destCwd, srcDir, destDir };
 }

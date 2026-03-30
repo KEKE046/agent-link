@@ -1,6 +1,7 @@
 import { getClaudeSdk, type Query } from "./claude-sdk";
 import type { ClaudeParams } from "./managed";
 import { mkdirSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import * as logger from "./logger";
 
 type Listener = (msg: any) => void;
@@ -86,14 +87,22 @@ export async function startQuery(
     queryOpts.settings = extraSettings;
   }
 
+  const userMsgUuid = randomUUID();
+
   if (opts.sessionId) {
     queryOpts.resume = opts.sessionId;
     buffers.set(opts.sessionId, []); // clear buffer for new query
+    // Broadcast user prompt so re-entering an active session shows it
+    broadcast(opts.sessionId, {
+      type: "user", uuid: userMsgUuid,
+      message: { role: "user", content: [{ type: "text", text: prompt }] },
+    });
   }
 
   const q = getClaudeSdk().query({ prompt, options: queryOpts });
   let resolvedId = opts.sessionId || "";
-  logger.debug("session", `Starting query${opts.sessionId ? ` (resume: ${opts.sessionId})` : " (new)"} cwd=${opts.cwd}`);
+  const modelLabel = queryOpts.model || "(default)";
+  logger.log("session", `Query: ${opts.sessionId ? `resume ${opts.sessionId}` : "new"} model=${modelLabel} cwd=${opts.cwd} prompt=${JSON.stringify(prompt).slice(0, 120)}`);
 
   if (opts.sessionId) {
     active.set(opts.sessionId, {
@@ -110,11 +119,16 @@ export async function startQuery(
       for await (const msg of q) {
         if (!resolvedId && msg.type === "system" && msg.subtype === "init") {
           resolvedId = msg.session_id;
-          logger.debug("session", `Init: ${resolvedId}`);
+          logger.log("session", `Created: ${resolvedId} model=${(msg as any).model || modelLabel} cwd=${opts.cwd}`);
           active.set(resolvedId, {
             query: q,
             cwd: opts.cwd,
             model: opts.model,
+          });
+          // Broadcast user prompt so re-entering an active session shows it
+          broadcast(resolvedId, {
+            type: "user", uuid: userMsgUuid,
+            message: { role: "user", content: [{ type: "text", text: prompt }] },
           });
         }
         if (resolvedId) broadcast(resolvedId, msg);
@@ -122,15 +136,15 @@ export async function startQuery(
     } catch (err: any) {
       if (resolvedId) {
         broadcast(resolvedId, { type: "error", error: err.message });
-        logger.error("session", `Session ${resolvedId} error: ${err.message}`);
+        logger.error("session", `Error ${resolvedId}: ${err.message}`);
       } else {
-        // Error before init — propagate to startQuery promise
         logger.error("session", `Pre-init error: ${err.message}`);
         earlyError = err instanceof Error ? err : new Error(String(err));
       }
     } finally {
-      if (resolvedId) active.delete(resolvedId);
       if (resolvedId) {
+        active.delete(resolvedId);
+        logger.log("session", `Done: ${resolvedId}`);
         broadcast(resolvedId, { type: "status", status: "idle" });
       }
     }
@@ -155,12 +169,13 @@ export async function startQuery(
     });
   }
 
-  return resolvedId;
+  return { sessionId: resolvedId, userMsgUuid };
 }
 
 export async function interrupt(sessionId: string) {
   const s = active.get(sessionId);
   if (s) {
+    logger.log("session", `Interrupt: ${sessionId}`);
     await s.query.interrupt();
   }
 }
@@ -168,6 +183,7 @@ export async function interrupt(sessionId: string) {
 export async function setModel(sessionId: string, model: string) {
   const s = active.get(sessionId);
   if (s) {
+    logger.log("session", `Model change: ${sessionId} → ${model}`);
     await s.query.setModel(model);
     s.model = model;
   }

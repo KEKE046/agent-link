@@ -13,11 +13,13 @@ import {
 
 export async function dispatch(action: string, params: any): Promise<any> {
   switch (action) {
-    case "query":
-      return { sessionId: await sessions.startQuery(params.prompt, {
+    case "query": {
+      const result = await sessions.startQuery(params.prompt, {
         sessionId: params.sessionId, cwd: params.cwd, model: params.model,
         claudeParams: params.claudeParams,
-      })};
+      });
+      return { sessionId: result.sessionId, userMsgUuid: result.userMsgUuid };
+    }
     case "interrupt":
       await sessions.interrupt(params.sessionId);
       return { ok: true };

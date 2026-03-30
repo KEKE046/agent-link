@@ -278,12 +278,17 @@ function app() {
         const data = await res.json();
         if (data.error) { this.msg('append', { type: 'error', error: data.error }); return; }
 
-        this.currentId = data.sessionId;
-        const entry = { sessionId: data.sessionId, name, bio, cwd: cwd || this.cwd, nodeId, params: params || {} };
+        const newSid = data.sessionId;
+        if (data.userMsgUuid) this.seenUuids.add(data.userMsgUuid);
+        const entry = { sessionId: newSid, name, bio, cwd: cwd || this.cwd, nodeId, params: params || {} };
         this.addManaged(entry);
-        this.activeSet.add(this.currentId);
+        this.activeSet.add(newSid);
         this.syncActive();
-        this.connectSSE(this.currentId);
+        // Only take over the view if user hasn't switched away during the await
+        if (!this.currentId) {
+          this.currentId = newSid;
+          this.connectSSE(newSid);
+        }
       } catch (err) {
         this.msg('append', { type: 'error', error: err.message });
       }
@@ -389,15 +394,16 @@ function app() {
 
     async send() {
       if (!this.inputText.trim() || !this.currentId) return;
+      const sid = this.currentId;
       const prompt = this.inputText.trim();
       this.inputText = '';
       this.msg('append', { type: 'user', message: { content: [{ type: 'text', text: prompt }] } });
 
-      const s = this.managed.find(s => s.sessionId === this.currentId);
+      const s = this.managed.find(s => s.sessionId === sid);
       const claudeParams = s?.params?.claude || undefined;
       try {
         const body = {
-          prompt, sessionId: this.currentId,
+          prompt, sessionId: sid,
           cwd: s?.cwd || this.cwd,
           model: claudeParams?.model || this.model,
           nodeId: s?.nodeId || this.selectedNodeId,
@@ -408,11 +414,15 @@ function app() {
           body: JSON.stringify(body),
         });
         const data = await res.json();
-        if (data.error) { this.msg('append', { type: 'error', error: data.error }); return; }
+        if (data.error) {
+          if (this.currentId === sid) this.msg('append', { type: 'error', error: data.error });
+          return;
+        }
 
-        this.activeSet.add(this.currentId);
+        if (data.userMsgUuid) this.seenUuids.add(data.userMsgUuid);
+        this.activeSet.add(sid);
         this.syncActive();
-        this.connectSSE(this.currentId);
+        if (this.currentId === sid) this.connectSSE(sid);
       } catch (err) {
         this.msg('append', { type: 'error', error: err.message });
       }

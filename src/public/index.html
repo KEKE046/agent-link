@@ -315,14 +315,10 @@
 
               <!-- Node / CWD -->
               <div class="flex gap-2">
-                <div class="flex-1" x-show="nodes.length > 1">
+                <div x-show="nodes.length > 1" class="flex-shrink-0">
                   <label class="text-xs text-gray-400 block mb-1">Node</label>
-                  <select x-model="agentDialog.nodeId" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm outline-none">
-                    <option :value="localId" x-text="localLabel || localId"></option>
-                    <template x-for="n in nodes" :key="n.nodeId">
-                      <option :value="n.nodeId" x-text="n.label || n.nodeId"></option>
-                    </template>
-                  </select>
+                  <div class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-300"
+                       x-text="agentDialog.nodeId === localId ? (localLabel || localId) : (nodes.find(n => n.nodeId === agentDialog.nodeId)?.label || agentDialog.nodeId)"></div>
                 </div>
                 <div class="flex-1">
                   <label class="text-xs text-gray-400 block mb-1">CWD</label>
