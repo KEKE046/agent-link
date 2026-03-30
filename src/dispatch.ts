@@ -2,6 +2,7 @@
 // Used by Router (local dispatch) and Node connector (panel request handling).
 
 import * as sessions from "./sessions";
+import * as copy from "./copy";
 import {
   listInstalledVersions,
   startVscodeServer,
@@ -36,6 +37,18 @@ export async function dispatch(action: string, params: any): Promise<any> {
       return { ok: await stopVscodeServer(params.cwd) };
     case "getInstallCommand":
       return getInstallCommand(params.version);
+    case "copyNextName":
+      return copy.nextCopyName(params.cwd);
+    case "copyStart":
+      return copy.startCopy(params.src, params.dest);
+    case "copyList":
+      return copy.listTasks();
+    case "copyGetTask":
+      return copy.getTask(params.taskId);
+    case "copyDelete":
+      return copy.startDelete(params.taskId);
+    case "copyRemove":
+      return { ok: copy.removeTask(params.taskId) };
     default:
       throw new Error(`Unknown action: ${action}`);
   }

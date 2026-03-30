@@ -363,6 +363,78 @@ export function createApp(router: Router, initialLabel = ""): Hono {
     }
   });
 
+  // --- Copy APIs ---
+
+  app.get("/api/copy/next-name", async (c) => {
+    const cwd = c.req.query("cwd");
+    if (!cwd) return c.json({ error: "cwd required" }, 400);
+    const nodeId = getNodeId(c) || router.localId;
+    if (!nodeId) return c.json({ error: "nodeId required" }, 400);
+    try {
+      return c.json(await router.dispatch(nodeId, "copyNextName", { cwd }));
+    } catch (err: any) {
+      return c.json({ error: err.message }, 500);
+    }
+  });
+
+  app.post("/api/copy/start", async (c) => {
+    const body = await c.req.json();
+    const src = typeof body?.src === "string" ? body.src : "";
+    if (!src) return c.json({ error: "src required" }, 400);
+    const dest = typeof body?.dest === "string" ? body.dest : undefined;
+    const nodeId = body?.nodeId || getNodeId(c) || router.localId;
+    if (!nodeId) return c.json({ error: "nodeId required" }, 400);
+    try {
+      return c.json(await router.dispatch(nodeId, "copyStart", { src, dest }));
+    } catch (err: any) {
+      return c.json({ error: err.message }, 500);
+    }
+  });
+
+  app.get("/api/copy/tasks", async (c) => {
+    const nodeId = getNodeId(c) || router.localId;
+    if (!nodeId) return c.json({ error: "nodeId required" }, 400);
+    try {
+      return c.json(await router.dispatch(nodeId, "copyList", {}));
+    } catch (err: any) {
+      return c.json({ error: err.message }, 500);
+    }
+  });
+
+  app.get("/api/copy/tasks/:id", async (c) => {
+    const taskId = c.req.param("id");
+    const nodeId = getNodeId(c) || router.localId;
+    if (!nodeId) return c.json({ error: "nodeId required" }, 400);
+    try {
+      const task = await router.dispatch(nodeId, "copyGetTask", { taskId });
+      return task ? c.json(task) : c.json({ error: "not found" }, 404);
+    } catch (err: any) {
+      return c.json({ error: err.message }, 500);
+    }
+  });
+
+  app.post("/api/copy/tasks/:id/delete", async (c) => {
+    const taskId = c.req.param("id");
+    const nodeId = getNodeId(c) || router.localId;
+    if (!nodeId) return c.json({ error: "nodeId required" }, 400);
+    try {
+      return c.json(await router.dispatch(nodeId, "copyDelete", { taskId }));
+    } catch (err: any) {
+      return c.json({ error: err.message }, 500);
+    }
+  });
+
+  app.delete("/api/copy/tasks/:id", async (c) => {
+    const taskId = c.req.param("id");
+    const nodeId = getNodeId(c) || router.localId;
+    if (!nodeId) return c.json({ error: "nodeId required" }, 400);
+    try {
+      return c.json(await router.dispatch(nodeId, "copyRemove", { taskId }));
+    } catch (err: any) {
+      return c.json({ error: err.message }, 500);
+    }
+  });
+
   // --- Static assets ---
 
   app.get("/*", async (c) => {
