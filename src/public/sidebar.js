@@ -13,6 +13,7 @@ function sidebar() {
     agentMenu: null,    // sessionId or null
     confirmDialog: null, // {message, onConfirm}
     folderPopup: null,
+    copyPopup: null,    // {nodeId, src, dest, loading, error}
     menuPos: { top: 0, left: 0 }, // fixed position for dropdown menus
 
     // Top-level browse state — nested object mutations don't trigger x-for reactivity in Alpine
@@ -222,6 +223,36 @@ function sidebar() {
       const nodeId = this.folderPopup.nodeId;
       emit('folder-add', { cwd: this.folderPopup.cwd.trim(), nodeId });
       this.folderPopup = null;
+    },
+
+    // --- Copy folder ---
+
+    getCopyStatus(cwd) {
+      const t = this.copyTaskMap[cwd];
+      return t ? t.status : null;
+    },
+
+    getCopyTask(cwd) {
+      return this.copyTaskMap[cwd] || null;
+    },
+
+    async openCopyPopup(nodeId, cwd) {
+      this.copyPopup = { nodeId, src: cwd, dest: '', loading: true, error: '' };
+      this.$nextTick(() => document.querySelector('#copy-dest-input')?.focus());
+      try {
+        const params = new URLSearchParams({ cwd });
+        if (nodeId) params.set('nodeId', nodeId);
+        const data = await (await fetch(`/api/copy/next-name?${params}`)).json();
+        if (data.error) { this.copyPopup.error = data.error; }
+        else { this.copyPopup.dest = data.dest || ''; }
+      } catch (err) { this.copyPopup.error = err.message; }
+      this.copyPopup.loading = false;
+    },
+
+    submitCopyPopup() {
+      if (!this.copyPopup || !this.copyPopup.dest.trim() || this.copyPopup.loading) return;
+      emit('copy-start', { src: this.copyPopup.src, dest: this.copyPopup.dest.trim(), nodeId: this.copyPopup.nodeId });
+      this.copyPopup = null;
     },
 
     // --- Add-agent dialog ---

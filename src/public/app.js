@@ -36,6 +36,9 @@ function app() {
     // VSCode active servers: { "nodeId:cwd": {id, nodeId, cwd, commit, port} }
     vscodeActive: {},
 
+    // Copy tasks: { "dest": {id, src, dest, status, error} }
+    copyTaskMap: {},
+
     // Auth state
     authRequired: false,
     authenticated: true,
@@ -51,7 +54,8 @@ function app() {
         this.fetchNodes().then(() => { this.loadManaged(); this.loadFolders(); });
         this.refreshActive();
         this.refreshVscode();
-        setInterval(() => { this.refreshActive(); this.refreshNodes(); this.refreshVscode(); }, 5000);
+        this.refreshCopyTasks();
+        setInterval(() => { this.refreshActive(); this.refreshNodes(); this.refreshVscode(); this.refreshCopyTasks(); }, 5000);
       });
       this.$watch('cwd', (v) => localStorage.setItem('agent-link:cwd', v));
       this.$watch('model', (v) => localStorage.setItem('agent-link:model', v));
@@ -104,7 +108,8 @@ function app() {
         this.fetchNodes().then(() => { this.loadManaged(); this.loadFolders(); });
         this.refreshActive();
         this.refreshVscode();
-        setInterval(() => { this.refreshActive(); this.refreshNodes(); this.refreshVscode(); }, 5000);
+        this.refreshCopyTasks();
+        setInterval(() => { this.refreshActive(); this.refreshNodes(); this.refreshVscode(); this.refreshCopyTasks(); }, 5000);
       } catch (err) {
         this.loginError = err.message;
       }
@@ -465,6 +470,47 @@ function app() {
     refreshData() {
       this.refreshNodes();
       this.refreshVscode();
+      this.refreshCopyTasks();
+    },
+
+    async refreshCopyTasks() {
+      try {
+        const tasks = await (await fetch('/api/copy/tasks')).json();
+        const map = {};
+        for (const t of (tasks || [])) map[t.dest] = t;
+        this.copyTaskMap = map;
+      } catch {}
+    },
+
+    async startCopy(detail) {
+      const { src, dest, nodeId } = detail;
+      try {
+        const res = await fetch('/api/copy/start', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ src, dest, nodeId }),
+        });
+        const data = await res.json();
+        if (data.error) { alert(data.error); return; }
+        // Add dest as a managed folder
+        if (data.dest && nodeId) this.addFolder({ cwd: data.dest, nodeId });
+        this.refreshCopyTasks();
+      } catch (err) { alert(err.message); }
+    },
+
+    async deleteCopyTask(taskId) {
+      try {
+        const res = await fetch(`/api/copy/tasks/${encodeURIComponent(taskId)}/delete`, { method: 'POST' });
+        const data = await res.json();
+        if (data.error) { alert(data.error); return; }
+        this.refreshCopyTasks();
+      } catch (err) { alert(err.message); }
+    },
+
+    async removeCopyTask(taskId) {
+      try {
+        await fetch(`/api/copy/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE' });
+        this.refreshCopyTasks();
+      } catch {}
     },
 
     async stopVscode(detail) {
