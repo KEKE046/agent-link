@@ -5,7 +5,7 @@
 
 function sidebar() {
   return {
-    expandedGroups: new Set(),
+    expandedGroups: new Set(JSON.parse(localStorage.getItem('agent-link:expanded-groups') || '[]')),
     folderMenu: null,
     renamePopup: null,  // {cwd, nodeId, label}
     nodeRenamePopup: null,  // {nodeId, label}
@@ -61,10 +61,12 @@ function sidebar() {
     toggleGroup(key) {
       this.expandedGroups.has(key) ? this.expandedGroups.delete(key) : this.expandedGroups.add(key);
       this.expandedGroups = new Set(this.expandedGroups);
+      localStorage.setItem('agent-link:expanded-groups', JSON.stringify([...this.expandedGroups]));
     },
     expandGroup(key) {
       this.expandedGroups.add(key || '(unknown)');
       this.expandedGroups = new Set(this.expandedGroups);
+      localStorage.setItem('agent-link:expanded-groups', JSON.stringify([...this.expandedGroups]));
     },
 
     get groupedSessions() {
@@ -414,6 +416,7 @@ function sidebar() {
       try {
         const params = new URLSearchParams({ limit: String(d.browseLimit), offset: String(d.browseOffset) });
         if (d.browseFilter && d.browseExact) params.set('cwd', d.browseFilter);
+        if (d.nodeId) params.set('nodeId', d.nodeId);
         const data = await (await fetch(`/api/sessions?${params}`)).json();
         let filtered = Array.isArray(data) ? data : [];
         if (d.browseFilter && !d.browseExact) {

@@ -78,7 +78,7 @@ export class Router {
     if (this.localId) {
       seen.add(this.localId);
       result.push({
-        nodeId: this.localId, label: this.localId, online: true,
+        nodeId: this.localId, label: this.localId, online: true, approved: true,
         activeSessionIds: sessions.getActiveIds(),
         vscodeServers: listActiveServers(),
       });

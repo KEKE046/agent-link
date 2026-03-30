@@ -10,6 +10,7 @@ import {
 import { verifyToken, verifyCookie, createSessionCookie, isEnabled as authEnabled } from "./auth";
 import { load as loadStore, save as saveStore } from "./store";
 import assets from "./assets";
+import * as logger from "./logger";
 
 const isDev = Bun.env.NODE_ENV === "development";
 
@@ -59,7 +60,11 @@ export function createApp(router: Router, initialLabel = ""): Hono {
     if (!authEnabled()) return c.json({ ok: true });
     const body = await c.req.json();
     const token = typeof body?.token === "string" ? body.token : "";
-    if (!verifyToken(token)) return c.json({ error: "invalid token" }, 401);
+    if (!verifyToken(token)) {
+      logger.warn("auth", "Login failed: invalid token");
+      return c.json({ error: "invalid token" }, 401);
+    }
+    logger.log("auth", "Login successful");
     const cookie = await createSessionCookie();
     return new Response(JSON.stringify({ ok: true }), {
       headers: { "Content-Type": "application/json", "Set-Cookie": cookie },
@@ -84,8 +89,24 @@ export function createApp(router: Router, initialLabel = ""): Hono {
     const bearer = c.req.header("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
     if (bearer && verifyToken(bearer)) return next();
     const ok = await verifyCookie(c.req.header("cookie") ?? null);
-    if (!ok) return c.json({ error: "unauthorized" }, 401);
+    if (!ok) {
+      logger.warn("auth", `Unauthorized: ${c.req.method} ${c.req.path}`);
+      return c.json({ error: "unauthorized" }, 401);
+    }
     return next();
+  });
+
+  // --- Audit logging middleware (log all API requests to file) ---
+
+  app.use("/api/*", async (c, next) => {
+    const method = c.req.method;
+    const path = c.req.path;
+    // Skip noisy read-only polling endpoints
+    if (method === "GET" && (path === "/api/active" || path === "/api/nodes" || path === "/api/auth/check")) return next();
+    const start = Date.now();
+    await next();
+    const ms = Date.now() - start;
+    logger.audit("api", `${method} ${path} ${c.res.status} ${ms}ms`);
   });
 
   // --- Session APIs ---
@@ -142,9 +163,10 @@ export function createApp(router: Router, initialLabel = ""): Hono {
 
   app.get("/api/events/:id", (c) => {
     const sessionId = c.req.param("id");
+    logger.debug("sse", `Connect: ${sessionId}`);
     return streamSSE(c, async (stream) => {
       let closed = false;
-      stream.onAbort(() => { closed = true; });
+      stream.onAbort(() => { closed = true; logger.debug("sse", `Disconnect: ${sessionId}`); });
 
       const unsub = router.subscribe(sessionId, (msg) => {
         if (!closed) stream.writeSSE({ data: JSON.stringify(msg), event: "message" });

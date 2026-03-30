@@ -1,4 +1,5 @@
 import { load, save } from "./store";
+import * as logger from "./logger";
 
 export interface ClaudeParams {
   model?: string;
@@ -52,6 +53,7 @@ export function addManaged(session: ManagedSession): ManagedSession[] {
   const all = readAll().filter((item) => item.id !== session.id);
   all.unshift(session);
   save("managed-sessions", all);
+  logger.log("agent", `Register: "${session.name}" id=${session.id} cwd=${session.cwd}${session.nodeId ? ` node=${session.nodeId}` : ""}`);
   return all;
 }
 
@@ -69,6 +71,7 @@ export function updateManaged(id: string, patch: Partial<Pick<ManagedSession, 'p
 export function removeManaged(id: string): ManagedSession[] {
   const all = readAll().filter((item) => item.id !== id);
   save("managed-sessions", all);
+  logger.log("agent", `Remove: id=${id}`);
   return all;
 }
 
