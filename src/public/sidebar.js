@@ -435,7 +435,15 @@ function sidebar() {
       const params = { claude: this.buildDialogParams() };
       const nodeId = d.nodeId;
 
-      if (d.tab === 'load' && d.browseSelected) {
+      if (d.tab === 'import' && d.browseSelected) {
+        // Import: fork session to new cwd
+        const srcSession = this.browseSessions.find(s => s.sessionId === d.browseSelected);
+        emit('agent-create', {
+          name: d.name.trim(), bio: d.bio.trim() || undefined, cwd: d.cwd, nodeId, params,
+          importSessionId: d.browseSelected,
+          importSrcCwd: srcSession?.cwd || d.browseFilter,
+        });
+      } else if (d.tab === 'load' && d.browseSelected) {
         emit('agent-create', {
           name: d.name.trim(), bio: d.bio.trim() || undefined, cwd: d.cwd, nodeId, params,
           loadSessionId: d.browseSelected,

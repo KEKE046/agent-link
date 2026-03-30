@@ -365,6 +365,21 @@ export function createApp(router: Router, initialLabel = ""): Hono {
 
   // --- Copy APIs ---
 
+  app.post("/api/fork", async (c) => {
+    const body = await c.req.json();
+    const sessionId = typeof body?.sessionId === "string" ? body.sessionId : "";
+    const srcCwd = typeof body?.srcCwd === "string" ? body.srcCwd : "";
+    const destCwd = typeof body?.destCwd === "string" ? body.destCwd : "";
+    if (!sessionId || !srcCwd || !destCwd) return c.json({ error: "sessionId, srcCwd, destCwd required" }, 400);
+    const nodeId = body?.nodeId || getNodeId(c) || router.localId;
+    if (!nodeId) return c.json({ error: "nodeId required" }, 400);
+    try {
+      return c.json(await router.dispatch(nodeId, "forkSession", { sessionId, srcCwd, destCwd }));
+    } catch (err: any) {
+      return c.json({ error: err.message }, 500);
+    }
+  });
+
   app.get("/api/copy/next-name", async (c) => {
     const cwd = c.req.query("cwd");
     if (!cwd) return c.json({ error: "cwd required" }, 400);

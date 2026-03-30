@@ -221,7 +221,7 @@ function app() {
 
     // Called from the add-agent dialog with full agent info
     async createAgent(detail) {
-      const { name, bio, cwd, nodeId, params, initialPrompt, loadSessionId } = detail;
+      const { name, bio, cwd, nodeId, params, initialPrompt, loadSessionId, importSessionId, importSrcCwd } = detail;
       if (!name) return;
 
       // Ensure folder is tracked
@@ -232,6 +232,25 @@ function app() {
         const entry = { sessionId: loadSessionId, name, bio, cwd, nodeId, params: params || {} };
         this.addManaged(entry);
         this.switchSession(loadSessionId);
+        return;
+      }
+
+      if (importSessionId && importSrcCwd) {
+        // Fork/import: copy session JSONL to new cwd
+        try {
+          const res = await fetch('/api/fork', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId: importSessionId, srcCwd: importSrcCwd, destCwd: cwd, nodeId }),
+          });
+          const data = await res.json();
+          if (data.error) { this.msg('append', { type: 'error', error: data.error }); return; }
+
+          const entry = { sessionId: importSessionId, name, bio, cwd, nodeId, params: params || {} };
+          this.addManaged(entry);
+          this.switchSession(importSessionId);
+        } catch (err) {
+          this.msg('append', { type: 'error', error: err.message });
+        }
         return;
       }
 
