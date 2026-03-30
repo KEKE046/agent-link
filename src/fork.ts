@@ -37,9 +37,8 @@ export function forkSession(sessionId: string, srcCwd: string, destCwd: string):
 
   const newSessionId = crypto.randomUUID();
 
-  // Read and rewrite paths + sessionId
+  // Read and replace sessionId (paths are NOT rewritten — the SDK resume cwd handles that)
   let content = readFileSync(srcFile, "utf-8");
-  content = content.replaceAll(srcCwd, destCwd);
   content = content.replaceAll(sessionId, newSessionId);
 
   // Append fork notice so the model knows about the directory change
