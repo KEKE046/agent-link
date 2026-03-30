@@ -414,6 +414,7 @@ function sidebar() {
       try {
         const params = new URLSearchParams({ limit: String(d.browseLimit), offset: String(d.browseOffset) });
         if (d.browseFilter && d.browseExact) params.set('cwd', d.browseFilter);
+        if (d.nodeId) params.set('nodeId', d.nodeId);
         const data = await (await fetch(`/api/sessions?${params}`)).json();
         let filtered = Array.isArray(data) ? data : [];
         if (d.browseFilter && !d.browseExact) {

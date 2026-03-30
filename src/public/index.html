@@ -612,6 +612,7 @@
     <div class="p-3 border-t border-gray-800 bg-gray-900/30 flex-shrink-0">
       <div class="flex gap-2">
         <input x-model="inputText" @keydown.enter.prevent="send()"
+               @keydown.escape.prevent="interruptSession()"
                :placeholder="currentId ? 'Send a message...' : 'No agent selected'"
                :disabled="!currentId"
                class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm mono outline-none focus:border-gray-500 min-w-0 disabled:opacity-60" />

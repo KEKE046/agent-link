@@ -92,6 +92,29 @@ describe("P1: Interactions", () => {
     await stopBtn.waitFor({ state: "hidden", timeout: 5_000 });
   }, 30_000);
 
+  test("7b. Interrupt session (Escape key)", async () => {
+    installSlowSdk(5000);
+
+    await page.goto(ctx.baseUrl);
+    await page.waitForSelector("text=No agents");
+    await createAgent(page, "Esc Agent");
+
+    // Wait for Stop button to appear (session is active)
+    const stopBtn = page.locator("button:has-text('Stop')");
+    await stopBtn.waitFor({ state: "visible", timeout: 10_000 });
+
+    // Focus the input and press Escape
+    const input = page.locator("input[placeholder='Send a message...']");
+    await input.focus();
+    await page.keyboard.press("Escape");
+
+    // Should go back to idle
+    await page.waitForSelector("text=idle", { timeout: 10_000 });
+
+    // Stop button should disappear
+    await stopBtn.waitFor({ state: "hidden", timeout: 5_000 });
+  }, 30_000);
+
   test("8. Sidebar collapse/expand", async () => {
     await page.goto(ctx.baseUrl);
     await page.waitForSelector("text=Agent Link");

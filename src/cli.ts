@@ -20,7 +20,13 @@ import * as logger from "./logger";
 
 const args = process.argv.slice(2);
 
-const SUBCOMMANDS = new Set(["server", "node", "status", "list", "inspect", "send", "bio", "intro", "skill", "help"]);
+// --version: print version and exit
+if (args.includes("--version") || args.includes("-V")) {
+  console.log("agent-link 1.3.0");
+  process.exit(0);
+}
+
+const SUBCOMMANDS = new Set(["server", "node", "status", "list", "inspect", "send", "bio", "intro", "skill", "approve", "help"]);
 const subcommand = SUBCOMMANDS.has(args[0]) ? args[0] : null;
 const subArgs = subcommand ? args.slice(1) : args;
 
@@ -73,9 +79,19 @@ if (subcommand === "send") {
   process.exit(0);
 }
 
+if (subcommand === "approve") {
+  const { runApprove } = await import("./cli/approve");
+  await runApprove(subArgs);
+  process.exit(0);
+}
+
 // --- Help ---
 
-if (subcommand === "help" || subArgs.includes("--help") || subArgs.includes("-h")) {
+const showHelp = subcommand === "help" || subArgs.includes("--help") || subArgs.includes("-h")
+  // Bare `agent-link` with no args or subcommand → show help (don't start server)
+  || (!subcommand && args.length === 0);
+
+if (showHelp) {
   console.log(`Usage:
   agent-link server [options]               Start web server (local or panel)
   agent-link node <url> [options]           Connect to a panel server as a node
@@ -83,6 +99,7 @@ if (subcommand === "help" || subArgs.includes("--help") || subArgs.includes("-h"
   agent-link list   [--url <url>]           List managed agents in a table
   agent-link inspect <name|id>... [-n N] [--url]  Inspect agent details + last N messages (default: 1)
   agent-link send <name|id> <msg> [--url]   Send message to an agent
+  agent-link approve <nodeId> [--url]       Approve a pending node
   agent-link bio [name|id] <text>                  Set one-line bio for an agent (name|id required outside a session)
   agent-link intro [name|id] <text>                Set intro paragraph for an agent
   agent-link skill [--team-work]                   Print inter-agent teamwork cheatsheet (default)
@@ -109,7 +126,8 @@ Node options:
 
 Shared options:
   --url <url>       Server URL for introspection commands
-                    (default: http://localhost:3456, or AGENT_LINK_URL env)`);
+                    (default: http://localhost:3456, or AGENT_LINK_URL env)
+  --version, -V     Show version`);
   process.exit(0);
 }
 
@@ -332,7 +350,7 @@ if (connectTo) {
                     : { type: "pending" }
                 );
                 ws.send(nk ? encrypt(nk, response) : response);
-                console.log(`[panel] Node ${reg.approved ? "registered" : "pending"}: ${reg.nodeId} (${msg.label})`);
+                logger.log("panel", `Node ${reg.approved ? "registered" : "pending"}: ${reg.nodeId} (${msg.label})`);
               }
             } catch {}
             return;
@@ -349,7 +367,7 @@ if (connectTo) {
         const data = ws.data as SocketData;
         if (data.type === "node" && data.nodeId && panelNodes) {
           panelNodes.markOffline(data.nodeId);
-          console.log(`[panel] Node disconnected: ${data.nodeId}`);
+          logger.log("panel", `Node disconnected: ${data.nodeId}`);
         } else if (data.type === "vscode") {
           const u = data.upstream as WebSocket | undefined;
           if (u && u.readyState !== WebSocket.CLOSED) u.close();

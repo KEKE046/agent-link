@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { mkdirSync, appendFileSync } from "node:fs";
 
-type Level = "info" | "warn" | "error" | "debug";
+type Level = "info" | "warn" | "error" | "debug" | "audit";
 
 let logFile: string | null = null;
 let enableDebug = false;
@@ -21,10 +21,13 @@ function write(level: Level, tag: string, msg: string) {
   const ts = new Date().toISOString();
   const line = `${ts} [${level.toUpperCase()}] [${tag}] ${msg}`;
   const colored = color(level, line);
-  if (level === "error") {
-    process.stderr.write(colored + "\n");
-  } else {
-    process.stdout.write(colored + "\n");
+  // Audit lines go to log file only (not cluttering stdout)
+  if (level !== "audit") {
+    if (level === "error") {
+      process.stderr.write(colored + "\n");
+    } else {
+      process.stdout.write(colored + "\n");
+    }
   }
   if (logFile) {
     try { appendFileSync(logFile, line + "\n"); } catch {}
@@ -44,3 +47,4 @@ export function log(tag: string, msg: string)   { write("info",  tag, msg); }
 export function warn(tag: string, msg: string)  { write("warn",  tag, msg); }
 export function error(tag: string, msg: string) { write("error", tag, msg); }
 export function debug(tag: string, msg: string) { write("debug", tag, msg); }
+export function audit(tag: string, msg: string) { write("audit", tag, msg); }

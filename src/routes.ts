@@ -10,6 +10,7 @@ import {
 import { verifyToken, verifyCookie, createSessionCookie, isEnabled as authEnabled } from "./auth";
 import { load as loadStore, save as saveStore } from "./store";
 import assets from "./assets";
+import * as logger from "./logger";
 
 const isDev = Bun.env.NODE_ENV === "development";
 
@@ -86,6 +87,19 @@ export function createApp(router: Router, initialLabel = ""): Hono {
     const ok = await verifyCookie(c.req.header("cookie") ?? null);
     if (!ok) return c.json({ error: "unauthorized" }, 401);
     return next();
+  });
+
+  // --- Audit logging middleware (log all API mutations to file) ---
+
+  app.use("/api/*", async (c, next) => {
+    const method = c.req.method;
+    // Only audit state-changing requests (POST/PATCH/DELETE)
+    if (method === "GET" || method === "HEAD" || method === "OPTIONS") return next();
+    const path = c.req.path;
+    const start = Date.now();
+    await next();
+    const ms = Date.now() - start;
+    logger.audit("api", `${method} ${path} ${c.res.status} ${ms}ms`);
   });
 
   // --- Session APIs ---
